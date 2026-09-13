@@ -1,4 +1,4 @@
-# Aspose.Imaging Foss for .NET
+# Aspose.Imaging FOSS for .NET
 
 [![CI](https://github.com/aspose-imaging-foss/Aspose.Imaging.Foss/actions/workflows/ci.yml/badge.svg)](https://github.com/aspose-imaging-foss/Aspose.Imaging.Foss/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/Aspose.Imaging.Foss.svg)](https://www.nuget.org/packages/Aspose.Imaging.Foss)
