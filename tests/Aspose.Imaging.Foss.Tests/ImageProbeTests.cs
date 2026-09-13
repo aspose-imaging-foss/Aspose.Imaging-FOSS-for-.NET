@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Aspose.Imaging.Foss.Tests;
 
@@ -285,5 +287,85 @@ public class ImageProbeTests
         Assert.Equal(ImageFormat.Png, info.Format);
         Assert.Equal(30, info.Width);
         Assert.Equal(20, info.Height);
+    }
+
+    [Fact]
+    public void Probe_ReadOnlySpan_ReturnsCorrectResult()
+    {
+        ReadOnlySpan<byte> data = SampleImages.Png(50, 40);
+        var info = ImageProbe.Probe(data);
+
+        Assert.Equal(ImageFormat.Png, info.Format);
+        Assert.Equal(50, info.Width);
+        Assert.Equal(40, info.Height);
+    }
+
+    [Fact]
+    public void Probe_FileInfo_ReturnsCorrectResult()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(path, SampleImages.Jpeg(320, 240));
+            var info = ImageProbe.Probe(new FileInfo(path));
+
+            Assert.Equal(ImageFormat.Jpeg, info.Format);
+            Assert.Equal(320, info.Width);
+            Assert.Equal(240, info.Height);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_SeekableStream_ReturnsCorrectResult()
+    {
+        using var stream = new MemoryStream(SampleImages.Gif(128, 64));
+        var info = await ImageProbe.ProbeAsync(stream);
+
+        Assert.Equal(ImageFormat.Gif, info.Format);
+        Assert.Equal(128, info.Width);
+        Assert.Equal(64, info.Height);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_NonSeekableStream_StillWorks()
+    {
+        var info = await ImageProbe.ProbeAsync(new NonSeekableStream(SampleImages.Bmp(100, 80, 24)));
+
+        Assert.Equal(ImageFormat.Bmp, info.Format);
+        Assert.Equal(100, info.Width);
+        Assert.Equal(80, info.Height);
+    }
+
+    [Fact]
+    public async Task ProbeFileAsync_ReadsFromDisk()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(path, SampleImages.Png(70, 90));
+            var info = await ImageProbe.ProbeFileAsync(path);
+
+            Assert.Equal(ImageFormat.Png, info.Format);
+            Assert.Equal(70, info.Width);
+            Assert.Equal(90, info.Height);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAsync_CancellationToken_PropagatesCancellation()
+    {
+        using var cts = new System.Threading.CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => ImageProbe.ProbeAsync(new NonSeekableStream(SampleImages.Png(10, 10)), cts.Token));
     }
 }
