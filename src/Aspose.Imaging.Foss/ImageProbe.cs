@@ -22,6 +22,9 @@ public static class ImageProbe
         new EmfFormatHandler(),
         new WmfFormatHandler(),
         new DicomFormatHandler(),
+        new DjVuFormatHandler(),
+        new AvifFormatHandler(),
+        new HeicFormatHandler(),
     };
 
     private static readonly int SignatureBufferSize = ComputeSignatureBufferSize();

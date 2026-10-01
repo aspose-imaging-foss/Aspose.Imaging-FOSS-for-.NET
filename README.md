@@ -39,13 +39,23 @@ for a full-featured commercial SDK covering all of these formats and more.
 | EMF    | ✅ | ✅ (from bounds) | — | — |
 | WMF (placeable) | ✅ | ✅ (assumes 96 DPI) | — | — |
 | DICOM  | ✅ | ✅ (Rows/Columns) | ✅ (BitsAllocated) | — |
+| DjVu (single-page DJVU / multi-page DJVM) | ✅ | ✅ | — | ✅ |
+| AVIF (still / animated) | ✅ | ✅ | — | — |
+| HEIC / HEIF | ✅ | ✅ | — | — |
 
 DICOM parsing covers Implicit VR Little Endian and Explicit VR Little/Big Endian transfer
 syntaxes (including the common compressed ones, whose non-pixel elements are Explicit VR
 Little Endian); it stops rather than guesses if it hits a sequence or encapsulated pixel data
 with an undefined length before finding Rows/Columns/BitsAllocated.
 
-Planned: CDR, DjVu.
+DjVu reads dimensions and frame count from the IFF chunk tree; multi-page files (DJVM) report
+the page count from the DIRM directory chunk and dimensions from the first embedded DJVU page.
+
+AVIF and HEIC/HEIF dimensions are read from the `ispe` (image spatial extent) property box
+via the `meta → iprp → ipco → ispe` path. Brand detection covers `avif`/`avis` for AVIF and
+`heic`, `heix`, `hevc`, `hevx`, `mif1`/`mif2` for HEIC/HEIF.
+
+Planned: CDR.
 
 ## Install
 

@@ -360,6 +360,48 @@ public class ImageProbeTests
     }
 
     [Fact]
+    public void DjVu_SinglePage_ReportsFormatAndDimensions()
+    {
+        var info = ImageProbe.Probe(SampleImages.DjVu(640, 480));
+
+        Assert.Equal(ImageFormat.DjVu, info.Format);
+        Assert.Equal(640, info.Width);
+        Assert.Equal(480, info.Height);
+        Assert.Equal(1, info.FrameCount);
+    }
+
+    [Fact]
+    public void DjVu_MultiPage_ReportsFrameCount()
+    {
+        var info = ImageProbe.Probe(SampleImages.DjVuMultiPage(320, 240, pageCount: 5));
+
+        Assert.Equal(ImageFormat.DjVu, info.Format);
+        Assert.Equal(320, info.Width);
+        Assert.Equal(240, info.Height);
+        Assert.Equal(5, info.FrameCount);
+    }
+
+    [Fact]
+    public void Avif_ReportsFormatAndDimensions()
+    {
+        var info = ImageProbe.Probe(SampleImages.Avif(1920, 1080));
+
+        Assert.Equal(ImageFormat.Avif, info.Format);
+        Assert.Equal(1920, info.Width);
+        Assert.Equal(1080, info.Height);
+    }
+
+    [Fact]
+    public void Heic_ReportsFormatAndDimensions()
+    {
+        var info = ImageProbe.Probe(SampleImages.Heic(4032, 3024));
+
+        Assert.Equal(ImageFormat.Heic, info.Format);
+        Assert.Equal(4032, info.Width);
+        Assert.Equal(3024, info.Height);
+    }
+
+    [Fact]
     public async Task ProbeAsync_CancellationToken_PropagatesCancellation()
     {
         using var cts = new System.Threading.CancellationTokenSource();

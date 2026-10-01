@@ -13,5 +13,8 @@ public enum ImageFormat
     Psd,
     Emf,
     Wmf,
-    Dicom
+    Dicom,
+    DjVu,
+    Avif,
+    Heic
 }

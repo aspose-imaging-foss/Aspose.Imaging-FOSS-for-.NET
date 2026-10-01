@@ -280,4 +280,58 @@ internal static class SampleImages
 
     private static void AppendImplicitUShort(ByteBuilder builder, int group, int element, int value) =>
         builder.UInt16LE(group).UInt16LE(element).UInt32LE(2).UInt16LE(value);
+
+    public static byte[] DjVu(int width, int height) =>
+        new ByteBuilder()
+            .Ascii("AT&TFORM")
+            .UInt32BE(16)       // form data: DJVU(4)+INFO(4)+size(4)+data(4)
+            .Ascii("DJVU")
+            .Ascii("INFO")
+            .UInt32BE(4)        // INFO data size
+            .UInt16BE(width)
+            .UInt16BE(height)
+            .ToArray();
+
+    public static byte[] DjVuMultiPage(int width, int height, int pageCount) =>
+        new ByteBuilder()
+            .Ascii("AT&TFORM")
+            .UInt32BE(40)       // form data: DJVM(4)+DIRM_chunk(12)+FORM_chunk(24)
+            .Ascii("DJVM")
+            // DIRM chunk: 3 bytes data (odd → 1 pad byte appended)
+            .Ascii("DIRM")
+            .UInt32BE(3)
+            .Bytes(0x83)        // flags: bit7=bundled, version=3
+            .UInt16BE(pageCount)
+            .Bytes(0)           // IFF padding for odd-length chunk
+            // First DJVU sub-form with INFO
+            .Ascii("FORM")
+            .UInt32BE(16)       // sub-form data: DJVU(4)+INFO(4)+size(4)+data(4)
+            .Ascii("DJVU")
+            .Ascii("INFO")
+            .UInt32BE(4)
+            .UInt16BE(width)
+            .UInt16BE(height)
+            .ToArray();
+
+    public static byte[] Avif(int width, int height) =>
+        new ByteBuilder()
+            .UInt32BE(16).Ascii("ftyp").Ascii("avif").UInt32BE(0)
+            .UInt32BE(48).Ascii("meta").UInt32BE(0)     // meta FullBox (version+flags=0)
+            .UInt32BE(36).Ascii("iprp")
+            .UInt32BE(28).Ascii("ipco")
+            .UInt32BE(20).Ascii("ispe").UInt32BE(0)     // ispe FullBox
+            .UInt32BE((uint)width)
+            .UInt32BE((uint)height)
+            .ToArray();
+
+    public static byte[] Heic(int width, int height) =>
+        new ByteBuilder()
+            .UInt32BE(16).Ascii("ftyp").Ascii("heic").UInt32BE(0)
+            .UInt32BE(48).Ascii("meta").UInt32BE(0)
+            .UInt32BE(36).Ascii("iprp")
+            .UInt32BE(28).Ascii("ipco")
+            .UInt32BE(20).Ascii("ispe").UInt32BE(0)
+            .UInt32BE((uint)width)
+            .UInt32BE((uint)height)
+            .ToArray();
 }
