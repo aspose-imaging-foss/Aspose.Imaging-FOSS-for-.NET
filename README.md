@@ -32,23 +32,21 @@ and targets `netstandard2.0` and `net8.0`.
 flowchart TD
   subgraph StartingPoints["Starting Points"]
     direction TB
-    i1["Image files (PNG, JPEG, GIF, BMP, ICO, TIFF, WEBP)"]
-    i2["Image files (PSD, EMF, WMF)"]
-    i3["Image files (DICOM, DJVU)"]
-    i4["Image files (AVIF, HEIC)"]
+    i1["Image files<br/>(PNG, JPEG,<br/>GIF, BMP)"]
+    i2["Image files<br/>(ICO, TIFF,<br/>WEBP)"]
+    i3["Image files<br/>(PSD, EMF,<br/>WMF)"]
+    i4["Image files<br/>(DICOM, DJVU,<br/>AVIF, HEIC)"]
   end
   PRODUCT["Aspose.Imaging FOSS for .NET"]
   subgraph Capabilities["Core Capabilities"]
     direction TB
-    c1["Format detection from file header signatures"]
-    c2["Dimension and bit-depth extraction"]
-    c3["Frame and page counting where the format supports it"]
-    c4["Tolerant of malformed or truncated input"]
-    c5["Synchronous and async probing from files, streams, or byte arrays"]
+    c1["Format detection,<br/>tolerant of<br/>bad input"]
+    c2["Dimension,<br/>bit-depth,<br/>frame count"]
+    c3["Sync/async<br/>probing"]
   end
   subgraph Outputs["Outputs"]
     direction TB
-    o1["Images (ImageFormat, ImageInfo)"]
+    o1["Images<br/>(ImageFormat,<br/>ImageInfo)"]
   end
   StartingPoints --> PRODUCT --> Capabilities --> Outputs
 ```
