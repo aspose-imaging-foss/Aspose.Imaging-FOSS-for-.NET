@@ -24,6 +24,19 @@ internal static class SampleImages
 
     public static byte[] TruncatedJpeg() => new byte[] { 0xFF, 0xD8, 0xFF };
 
+    // Ends right after a marker code, so the segment length can't be read (found by fuzzing).
+    public static byte[] JpegEndingAfterMarker() =>
+        new byte[] { 0xFF, 0xD8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x0A };
+
+    // A segment whose length field is below its own 2-byte size.
+    public static byte[] JpegWithZeroSegmentLength() =>
+        new ByteBuilder()
+            .Bytes(0xFF, 0xD8, 0xFF, 0xE0)
+            .UInt16BE(0)
+            .Bytes(0xFF, 0xE1)
+            .UInt16BE(0)
+            .ToArray();
+
     public static byte[] Gif(int width, int height) => GifWithFrames(width, height, frameCount: 1);
 
     public static byte[] GifWithFrames(int width, int height, int frameCount)
@@ -173,6 +186,38 @@ internal static class SampleImages
         return builder.ToArray();
     }
 
+    // IFDs packed 4 bytes apart, each claiming the maximum 65535 entries; their next-IFD
+    // pointers sit past the (overlapping) entry tables and chain to the following IFD.
+    public static byte[] TiffWithMaximalIfdChain(int ifdCount)
+    {
+        const int entryTableEnd = 2 + 65535 * 12;
+        var data = new byte[8 + 4 * ifdCount + entryTableEnd + 4];
+
+        data[0] = (byte)'I';
+        data[1] = (byte)'I';
+        data[2] = 0x2A;
+        WriteUInt32LE(data, 4, 8);
+
+        for (var i = 0; i < ifdCount; i++)
+        {
+            var offset = 8 + 4 * i;
+            data[offset] = 0xFF;
+            data[offset + 1] = 0xFF;
+            var next = i == ifdCount - 1 ? 0u : (uint)(offset + 4);
+            WriteUInt32LE(data, offset + entryTableEnd, next);
+        }
+
+        return data;
+    }
+
+    private static void WriteUInt32LE(byte[] data, int offset, uint value)
+    {
+        data[offset] = (byte)value;
+        data[offset + 1] = (byte)(value >> 8);
+        data[offset + 2] = (byte)(value >> 16);
+        data[offset + 3] = (byte)(value >> 24);
+    }
+
     private static void AddShortEntry(ByteBuilder builder, int tag, int value)
     {
         builder.UInt16LE(tag);
@@ -265,6 +310,15 @@ internal static class SampleImages
 
         return builder.ToArray();
     }
+
+    // Transfer Syntax UID declared with a long-form VR and a ~2 GB length in a tiny file.
+    public static byte[] DicomWithOversizedTransferSyntaxLength() =>
+        new ByteBuilder()
+            .Zeros(128)
+            .Ascii("DICM")
+            .UInt16LE(0x0002).UInt16LE(0x0010).Ascii("OB").UInt16LE(0).UInt32LE(0x7FFF0000)
+            .Ascii(ImplicitVrLittleEndian)
+            .ToArray();
 
     private static void AppendTransferSyntax(ByteBuilder builder, string uid)
     {

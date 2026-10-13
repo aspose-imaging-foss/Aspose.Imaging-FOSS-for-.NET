@@ -47,7 +47,20 @@ internal sealed class TiffFormatHandler : IFormatHandler
                 break;
 
             var entryCount = EndianReader.ReadUInt16(countBuf, 0, bigEndian);
-            var isFirstIfd = frameCount == 0;
+
+            // Only the first IFD's entries are parsed; later IFDs are just counted, so their
+            // entries are skipped with a single seek. Reading them entry by entry would let a
+            // chain of maximal IFDs cost billions of reads.
+            if (frameCount > 0)
+            {
+                frameCount++;
+                stream.Seek(entryCount * 12L, SeekOrigin.Current);
+                if (stream.ReadFully(nextOffsetBuf, 0, 4) < 4)
+                    break;
+
+                ifdOffset = EndianReader.ReadUInt32(nextOffsetBuf, 0, bigEndian);
+                continue;
+            }
 
             var readOk = true;
             for (var i = 0; i < entryCount; i++)
@@ -57,9 +70,6 @@ internal sealed class TiffFormatHandler : IFormatHandler
                     readOk = false;
                     break;
                 }
-
-                if (!isFirstIfd)
-                    continue;
 
                 var tag = EndianReader.ReadUInt16(entry, 0, bigEndian);
                 var type = EndianReader.ReadUInt16(entry, 2, bigEndian);

@@ -118,9 +118,12 @@ public static class ImageProbe
         return await ProbeAsync(stream, cancellationToken).ConfigureAwait(false);
     }
 
+    // Non-seekable streams are matched from their current position; DetectFormat only needs the
+    // signature bytes, so it doesn't buffer the whole stream the way Probe does.
     private static IFormatHandler? FindHandler(Stream stream)
     {
-        stream.Seek(0, SeekOrigin.Begin);
+        if (stream.CanSeek)
+            stream.Seek(0, SeekOrigin.Begin);
         var buffer = new byte[SignatureBufferSize];
         var read = stream.ReadFully(buffer, 0, buffer.Length);
 

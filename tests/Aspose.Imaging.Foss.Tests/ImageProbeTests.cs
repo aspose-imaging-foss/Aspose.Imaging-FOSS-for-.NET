@@ -40,6 +40,24 @@ public class ImageProbeTests
     }
 
     [Fact]
+    public void Jpeg_EndingAfterMarker_DoesNotLoopForever()
+    {
+        var info = ProbeWithin(SampleImages.JpegEndingAfterMarker(), TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ImageFormat.Jpeg, info.Format);
+        Assert.Null(info.Width);
+    }
+
+    [Fact]
+    public void Jpeg_SegmentLengthBelowTwo_DoesNotLoopForever()
+    {
+        var info = ProbeWithin(SampleImages.JpegWithZeroSegmentLength(), TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ImageFormat.Jpeg, info.Format);
+        Assert.Null(info.Width);
+    }
+
+    [Fact]
     public void Gif_ReportsFormatAndDimensions()
     {
         var info = ImageProbe.Probe(SampleImages.Gif(320, 240));
@@ -164,6 +182,16 @@ public class ImageProbeTests
     }
 
     [Fact]
+    public void Tiff_ChainOfMaximalIfds_IsCountedWithoutReadingEveryEntry()
+    {
+        // Before the fix this took ~45 s for 65536 IFDs (~11 s for the 16384 used here).
+        var info = ProbeWithin(SampleImages.TiffWithMaximalIfdChain(ifdCount: 16384), TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ImageFormat.Tiff, info.Format);
+        Assert.Equal(16384, info.FrameCount);
+    }
+
+    [Fact]
     public void Psd_ReportsFormatAndDimensions()
     {
         var info = ImageProbe.Probe(SampleImages.Psd(500, 400, 8));
@@ -230,6 +258,17 @@ public class ImageProbeTests
     }
 
     [Fact]
+    public void Dicom_OversizedTransferSyntaxLength_DoesNotAllocateByDeclaredLength()
+    {
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var info = ImageProbe.Probe(SampleImages.DicomWithOversizedTransferSyntaxLength());
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(ImageFormat.Dicom, info.Format);
+        Assert.True(allocated < 1024 * 1024, $"Probe allocated {allocated} bytes for a 161-byte file");
+    }
+
+    [Fact]
     public void Gif_TruncatedMidFrameData_DegradesGracefullyInsteadOfThrowing()
     {
         var full = SampleImages.GifWithFrames(64, 48, frameCount: 3);
@@ -256,6 +295,14 @@ public class ImageProbeTests
     public void DetectFormat_MatchesProbeFormat()
     {
         var format = ImageProbe.DetectFormat(SampleImages.Png(10, 10));
+
+        Assert.Equal(ImageFormat.Png, format);
+    }
+
+    [Fact]
+    public void DetectFormat_NonSeekableStream_StillWorks()
+    {
+        var format = ImageProbe.DetectFormat(new NonSeekableStream(SampleImages.Png(10, 10)));
 
         Assert.Equal(ImageFormat.Png, format);
     }
@@ -409,5 +456,13 @@ public class ImageProbeTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => ImageProbe.ProbeAsync(new NonSeekableStream(SampleImages.Png(10, 10)), cts.Token));
+    }
+
+    // Runs Probe on a worker so a regression to an infinite loop fails the test instead of hanging the run.
+    private static ImageInfo ProbeWithin(byte[] data, TimeSpan timeout)
+    {
+        var task = Task.Run(() => ImageProbe.Probe(data));
+        Assert.True(task.Wait(timeout), $"Probe did not finish within {timeout.TotalSeconds} s");
+        return task.Result;
     }
 }

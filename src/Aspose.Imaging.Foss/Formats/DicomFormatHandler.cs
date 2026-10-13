@@ -19,6 +19,7 @@ internal sealed class DicomFormatHandler : IFormatHandler
     private const string ImplicitVrLittleEndian = "1.2.840.10008.1.2";
     private const string ExplicitVrBigEndian = "1.2.840.10008.1.2.2";
     private const uint UndefinedLength = 0xFFFFFFFF;
+    private const uint MaxUidLength = 64;
 
     // VRs that use the "long form" explicit encoding: VR (2) + reserved (2) + length (4).
     private static readonly HashSet<string> LongFormVrs = new(new[]
@@ -116,6 +117,11 @@ internal sealed class DicomFormatHandler : IFormatHandler
 
             if (group == 0x0002 && element == 0x0010)
             {
+                // A UID is at most 64 characters; a larger length is malformed and must not
+                // drive an allocation sized by untrusted input.
+                if (length > MaxUidLength)
+                    return null;
+
                 var valueBuf = new byte[length];
                 if (stream.ReadFully(valueBuf, 0, (int)length) < length)
                     return null;

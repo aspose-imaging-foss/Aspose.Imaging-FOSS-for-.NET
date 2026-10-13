@@ -32,8 +32,14 @@ internal sealed class JpegFormatHandler : IFormatHandler
                 continue;
 
             var lengthBuf = new byte[2];
-            stream.ReadFully(lengthBuf, 0, 2);
+            if (stream.ReadFully(lengthBuf, 0, 2) < 2)
+                break;
+
+            // The length field counts itself, so anything below 2 is malformed; skipping by it
+            // would seek backwards and re-read the same marker forever.
             var segmentLength = EndianReader.ReadUInt16(lengthBuf, 0, bigEndian: true);
+            if (segmentLength < 2)
+                break;
 
             if (IsStartOfFrameMarker(marker))
             {
