@@ -33,7 +33,8 @@ internal sealed class GifFormatHandler : IFormatHandler
 
         var frameCount = CountFrames(stream);
 
-        return new ImageInfo(Format, width, height, frameCount: frameCount);
+        return new ImageInfo(Format,
+            HeaderValues.PositiveOrNull(width), HeaderValues.PositiveOrNull(height), frameCount: frameCount);
     }
 
     private static int? CountFrames(Stream stream)

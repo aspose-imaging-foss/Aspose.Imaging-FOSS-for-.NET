@@ -1,3 +1,5 @@
+using System;
+
 namespace Aspose.Imaging.Foss.Tests;
 
 internal static class SampleImages
@@ -84,6 +86,35 @@ internal static class SampleImages
             .Int32LE(height)
             .UInt16LE(1)
             .UInt16LE(bitCount)
+            .ToArray();
+
+    // OS/2 1.x bitmap: 12-byte BITMAPCOREHEADER with 16-bit unsigned width/height.
+    public static byte[] BmpCore(int width, int height, int bitCount = 24) =>
+        new ByteBuilder()
+            .Ascii("BM")
+            .UInt32LE(0)
+            .UInt32LE(0)
+            .UInt32LE(26)
+            .UInt32LE(12)
+            .UInt16LE(width)
+            .UInt16LE(height)
+            .UInt16LE(1)
+            .UInt16LE(bitCount)
+            .ToArray();
+
+    // BITMAPINFOHEADER-style layout with an arbitrary declared DIB header size (V4 = 108, V5 = 124, ...).
+    public static byte[] BmpWithHeaderSize(uint headerSize, int width, int height, int bitCount = 24) =>
+        new ByteBuilder()
+            .Ascii("BM")
+            .UInt32LE(0)
+            .UInt32LE(0)
+            .UInt32LE(14 + headerSize)
+            .UInt32LE(headerSize)
+            .Int32LE(width)
+            .Int32LE(height)
+            .UInt16LE(1)
+            .UInt16LE(bitCount)
+            .Zeros((int)headerSize - 16)
             .ToArray();
 
     public static byte[] WebPLossy(int width, int height) =>
@@ -218,6 +249,28 @@ internal static class SampleImages
         data[offset + 3] = (byte)(value >> 24);
     }
 
+    // Little-endian TIFF whose single IFD holds the given raw entries (tag, type, count, value
+    // field), followed by `trailer` at offset TiffTrailerOffset(entries.Length) for out-of-line values.
+    public static byte[] TiffWithEntries((int tag, int type, uint count, uint value)[] entries, byte[]? trailer = null)
+    {
+        var builder = new ByteBuilder()
+            .Ascii("II")
+            .Bytes(0x2A, 0x00)
+            .UInt32LE(8)
+            .UInt16LE(entries.Length);
+
+        foreach (var (tag, type, count, value) in entries)
+            builder.UInt16LE(tag).UInt16LE(type).UInt32LE(count).UInt32LE(value);
+
+        builder.UInt32LE(0); // no next IFD
+        if (trailer is not null)
+            builder.Bytes(trailer);
+
+        return builder.ToArray();
+    }
+
+    public static uint TiffTrailerOffset(int entryCount) => (uint)(8 + 2 + entryCount * 12 + 4);
+
     private static void AddShortEntry(ByteBuilder builder, int tag, int value)
     {
         builder.UInt16LE(tag);
@@ -239,14 +292,17 @@ internal static class SampleImages
             .UInt16BE(3)
             .ToArray();
 
-    public static byte[] Emf(int width, int height) =>
+    // rclBounds is inclusive-inclusive, so a width x height image spans (0, 0)-(width-1, height-1).
+    public static byte[] Emf(int width, int height) => EmfWithBounds(0, 0, width - 1, height - 1);
+
+    public static byte[] EmfWithBounds(int left, int top, int right, int bottom) =>
         new ByteBuilder()
             .UInt32LE(1)
             .UInt32LE(88)
-            .Int32LE(0)
-            .Int32LE(0)
-            .Int32LE(width)
-            .Int32LE(height)
+            .Int32LE(left)
+            .Int32LE(top)
+            .Int32LE(right)
+            .Int32LE(bottom)
             .Zeros(16)
             .Bytes(0x20, 0x45, 0x4D, 0x46)
             .ToArray();
@@ -254,21 +310,21 @@ internal static class SampleImages
     public static byte[] Wmf(int width, int height)
     {
         const int inch = 1440;
-        var right = width * inch / 96;
-        var bottom = height * inch / 96;
+        return WmfWithBounds(0, 0, width * inch / 96, height * inch / 96, inch);
+    }
 
-        return new ByteBuilder()
+    public static byte[] WmfWithBounds(int left, int top, int right, int bottom, int inch) =>
+        new ByteBuilder()
             .Bytes(0x9A, 0xC6, 0xCD, 0xD7)
             .UInt16LE(0)
-            .UInt16LE(0)
-            .UInt16LE(0)
+            .UInt16LE(left)
+            .UInt16LE(top)
             .UInt16LE(right)
             .UInt16LE(bottom)
             .UInt16LE(inch)
             .UInt32LE(0)
             .UInt16LE(0)
             .ToArray();
-    }
 
     public static byte[] Dicom() =>
         new ByteBuilder()
@@ -346,26 +402,130 @@ internal static class SampleImages
             .UInt16BE(height)
             .ToArray();
 
-    public static byte[] DjVuMultiPage(int width, int height, int pageCount) =>
-        new ByteBuilder()
-            .Ascii("AT&TFORM")
-            .UInt32BE(40)       // form data: DJVM(4)+DIRM_chunk(12)+FORM_chunk(24)
+    // A multi-page DJVM document laid out like real ones: a DIRM directory, then a shared
+    // dictionary (FORM:DJVI) before the pages and a thumbnail form (FORM:THUM) after them.
+    // DIRM's file count therefore exceeds the page count by two. Page i is (width + i) wide, so
+    // tests can tell the first page's INFO apart from the others.
+    public static byte[] DjVuMultiPage(int width, int height, int pageCount, bool bundled = true)
+    {
+        var fileCount = pageCount + 2;
+
+        var directory = new ByteBuilder()
+            .Bytes((byte)((bundled ? 0x80 : 0x00) | 1)) // flags: bit7 = bundled, version 1
+            .UInt16BE(fileCount);
+        if (bundled)
+            directory.Zeros(4 * fileCount); // component offsets; not read by the probe
+
+        var body = new ByteBuilder()
             .Ascii("DJVM")
-            // DIRM chunk: 3 bytes data (odd → 1 pad byte appended)
-            .Ascii("DIRM")
-            .UInt32BE(3)
-            .Bytes(0x83)        // flags: bit7=bundled, version=3
-            .UInt16BE(pageCount)
-            .Bytes(0)           // IFF padding for odd-length chunk
-            // First DJVU sub-form with INFO
-            .Ascii("FORM")
-            .UInt32BE(16)       // sub-form data: DJVU(4)+INFO(4)+size(4)+data(4)
-            .Ascii("DJVU")
-            .Ascii("INFO")
-            .UInt32BE(4)
-            .UInt16BE(width)
-            .UInt16BE(height)
-            .ToArray();
+            .Bytes(IffChunk("DIRM", directory.ToArray()));
+
+        if (bundled)
+        {
+            body.Bytes(IffChunk("FORM", Concat(Ascii("DJVI"), IffChunk("Djbz", Array.Empty<byte>()))));
+
+            for (var page = 0; page < pageCount; page++)
+                body.Bytes(DjVuPageForm(width + page, height));
+
+            body.Bytes(IffChunk("FORM", Concat(Ascii("THUM"), IffChunk("TH44", new byte[] { 0 }))));
+        }
+
+        return Concat(Ascii("AT&T"), IffChunk("FORM", body.ToArray()));
+    }
+
+    private static byte[] DjVuPageForm(int width, int height) =>
+        IffChunk("FORM", Concat(
+            Ascii("DJVU"),
+            IffChunk("INFO", new ByteBuilder().UInt16BE(width).UInt16BE(height).ToArray())));
+
+    // IFF chunk: id + big-endian data size + data, padded to an even length.
+    private static byte[] IffChunk(string id, byte[] data)
+    {
+        var builder = new ByteBuilder().Ascii(id).UInt32BE((uint)data.Length).Bytes(data);
+        if (data.Length % 2 != 0)
+            builder.Bytes(0);
+        return builder.ToArray();
+    }
+
+    // ISOBMFF HEIF/AVIF file with a configurable property layout. ipco holds a placeholder hvcC
+    // at property index 1 followed by one ispe per entry of `ispes` (indices 2, 3, ...), so
+    // tests also cover 1-based indexing past non-ispe properties. `associations` lists
+    // (item ID, property indices) for ipma; pitm is written only when primaryItemId is set.
+    public static byte[] Heif(
+        string majorBrand,
+        string[] compatibleBrands,
+        (uint width, uint height)[] ispes,
+        uint? primaryItemId = null,
+        (uint itemId, int[] propertyIndices)[]? associations = null,
+        int pitmVersion = 0,
+        int ipmaVersion = 0,
+        bool wideIpmaIndices = false)
+    {
+        var ftyp = new ByteBuilder().Ascii(majorBrand).UInt32BE(0);
+        foreach (var brand in compatibleBrands)
+            ftyp.Ascii(brand);
+
+        var ipco = new ByteBuilder().Bytes(IsoBox("hvcC", new byte[4]));
+        foreach (var (width, height) in ispes)
+            ipco.Bytes(IsoBox("ispe", new ByteBuilder().UInt32BE(0).UInt32BE(width).UInt32BE(height).ToArray()));
+
+        var iprp = new ByteBuilder().Bytes(IsoBox("ipco", ipco.ToArray()));
+        if (associations is not null)
+        {
+            var ipma = new ByteBuilder()
+                .Bytes((byte)ipmaVersion, 0, 0, (byte)(wideIpmaIndices ? 1 : 0))
+                .UInt32BE((uint)associations.Length);
+
+            foreach (var (itemId, propertyIndices) in associations)
+            {
+                if (ipmaVersion < 1)
+                    ipma.UInt16BE((int)itemId);
+                else
+                    ipma.UInt32BE(itemId);
+
+                ipma.Bytes((byte)propertyIndices.Length);
+                foreach (var index in propertyIndices)
+                {
+                    // High bit = "essential" flag, which the probe must mask off.
+                    if (wideIpmaIndices)
+                        ipma.UInt16BE(0x8000 | index);
+                    else
+                        ipma.Bytes((byte)(0x80 | index));
+                }
+            }
+
+            iprp.Bytes(IsoBox("ipma", ipma.ToArray()));
+        }
+
+        var meta = new ByteBuilder().UInt32BE(0); // FullBox version + flags
+        if (primaryItemId is uint id)
+        {
+            var pitm = new ByteBuilder().Bytes((byte)pitmVersion, 0, 0, 0);
+            if (pitmVersion == 0)
+                pitm.UInt16BE((int)id);
+            else
+                pitm.UInt32BE(id);
+
+            meta.Bytes(IsoBox("pitm", pitm.ToArray()));
+        }
+
+        meta.Bytes(IsoBox("iprp", iprp.ToArray()));
+
+        return Concat(IsoBox("ftyp", ftyp.ToArray()), IsoBox("meta", meta.ToArray()));
+    }
+
+    private static byte[] IsoBox(string type, byte[] payload) =>
+        new ByteBuilder().UInt32BE((uint)(8 + payload.Length)).Ascii(type).Bytes(payload).ToArray();
+
+    private static byte[] Ascii(string value) => new ByteBuilder().Ascii(value).ToArray();
+
+    private static byte[] Concat(params byte[][] parts)
+    {
+        var builder = new ByteBuilder();
+        foreach (var part in parts)
+            builder.Bytes(part);
+        return builder.ToArray();
+    }
 
     public static byte[] Avif(int width, int height) =>
         new ByteBuilder()

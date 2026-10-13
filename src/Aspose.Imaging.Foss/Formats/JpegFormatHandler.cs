@@ -44,10 +44,13 @@ internal sealed class JpegFormatHandler : IFormatHandler
             if (IsStartOfFrameMarker(marker))
             {
                 var sof = new byte[5];
-                stream.ReadFully(sof, 0, 5);
-                var precision = sof[0];
-                var height = EndianReader.ReadUInt16(sof, 1, bigEndian: true);
-                var width = EndianReader.ReadUInt16(sof, 3, bigEndian: true);
+                if (stream.ReadFully(sof, 0, 5) < 5)
+                    break;
+
+                var precision = HeaderValues.PositiveOrNull(sof[0]);
+                // A height of 0 means it's defined later by a DNL marker, after the scan data.
+                var height = HeaderValues.PositiveOrNull(EndianReader.ReadUInt16(sof, 1, bigEndian: true));
+                var width = HeaderValues.PositiveOrNull(EndianReader.ReadUInt16(sof, 3, bigEndian: true));
                 return new ImageInfo(Format, width, height, precision, frameCount: 1);
             }
 

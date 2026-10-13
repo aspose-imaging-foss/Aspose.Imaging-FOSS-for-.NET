@@ -86,7 +86,10 @@ internal sealed class DicomFormatHandler : IFormatHandler
             }
         }
 
-        return new ImageInfo(Format, width: columns, height: rows, bitDepth: bitsAllocated);
+        return new ImageInfo(Format,
+            width: HeaderValues.PositiveOrNull(columns),
+            height: HeaderValues.PositiveOrNull(rows),
+            bitDepth: HeaderValues.PositiveOrNull(bitsAllocated));
     }
 
     // File Meta Information (group 0002) is always Explicit VR Little Endian, regardless of

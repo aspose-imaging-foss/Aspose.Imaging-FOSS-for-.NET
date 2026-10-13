@@ -62,16 +62,21 @@ flowchart TD
   source .NET image manipulation API with no decode step.
 - Counts real multi-frame and multi-page content where the container format actually carries
   it: GIF walks its image-descriptor blocks, ICO its directory entries, TIFF its IFD chain, and
-  a multi-page DJVU (DJVM) its DIRM directory chunk.
+  a bundled multi-page DJVU (DJVM) its `FORM:DJVU` page components — not the DIRM file count,
+  which also includes shared dictionaries and thumbnails.
 - DICOM parsing covers Implicit VR Little Endian and Explicit VR Little/Big Endian transfer
   syntaxes — including the common compressed ones, whose non-pixel elements are encoded
   Explicit VR Little Endian — and reads `Rows`/`Columns`/`BitsAllocated` directly from the data
   set, stopping rather than guessing if it reaches a sequence or encapsulated pixel data
   element with an undefined length first.
-- AVIF and HEIC/HEIF dimensions come from the `ispe` (image spatial extent) property box via
-  the `meta` → `iprp` → `ipco` → `ispe` box path shared by both formats; brand detection covers
-  `avif`/`avis` for AVIF and `heic`, `heix`, `hevc`, `hevx`, `heim`, `heis`, `hevm`, `hevs`,
-  `mif1`, and `mif2` for HEIC/HEIF.
+- AVIF and HEIC/HEIF dimensions come from the primary image's `ispe` (image spatial extent)
+  property: `pitm` names the primary item and `ipma` links it to its `ipco` properties, so grid
+  images (such as iPhone photos) report the full canvas rather than a tile. Without those
+  associations the largest `ispe` is used. AVIF is detected by an `avif`/`avis` major brand, or
+  by a compatible `avif`/`avis` brand under a generic major brand such as `mif1`; HEIC/HEIF by
+  `heic`, `heix`, `hevc`, `hevx`, `heim`, `heis`, `hevm`, `hevs`, or `mif1`/`mif2` without AVIF.
+- Every number in an `ImageInfo` is either positive or `null`: zero, negative, or out-of-range
+  header fields are reported as unknown instead of being passed through.
 - `Probe()` never throws on a signature match it can't fully parse — malformed or truncated
   input comes back as an `ImageInfo` with only `Format` set, never an exception, so a probing
   pipeline can run unattended over untrusted input.
@@ -186,8 +191,8 @@ Console.WriteLine($"{info.Format}: {info.Width}x{info.Height}");
 ### Count Frames in a Multi-Frame GIF or a Multi-Page DJVU
 
 `FrameCount` is only populated with a real count for formats whose container actually records
-one — an animated GIF's image-descriptor blocks, or a multi-page DJVU (DJVM) document's DIRM
-directory chunk:
+one — an animated GIF's image-descriptor blocks, or the page components of a bundled
+multi-page DJVU (DJVM) document:
 
 ```csharp
 using Aspose.Imaging.Foss;
@@ -258,9 +263,10 @@ var format = ImageProbe.DetectFormat(networkStream);
   it never decodes pixel data, so there is no rendering, editing, or format-conversion
   capability anywhere in the library.
 - **Frame count reflects only what the container itself records.** It is a real, computed count
-  for GIF, ICO, TIFF, and multi-page DJVU (DJVM); every other supported format reports a fixed
-  `1` for a successfully parsed header, since none of their headers carry a genuine frame or
-  page count.
+  for GIF, ICO, TIFF, and bundled multi-page DJVU (DJVM); every other supported format reports a
+  fixed `1` for a successfully parsed header, since none of their headers carry a genuine frame
+  or page count. An indirect (multi-file) DJVM document, or a truncated bundled one, reports
+  `FrameCount` as `null`, since its pages can't all be seen from the one file.
 - **Non-placeable WMF is detected but not dimensioned.** The classic (non-placeable) WMF header
   carries no bounding rectangle, so `Probe` returns a format-only `ImageInfo` for it; only the
   placeable WMF header (identified by its own magic number) yields `Width`/`Height`.

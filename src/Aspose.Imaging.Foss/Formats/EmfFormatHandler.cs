@@ -31,11 +31,16 @@ internal sealed class EmfFormatHandler : IFormatHandler
         stream.ReadFully(buffer, 0, buffer.Length);
 
         // EMF has no explicit width/height field; pixel dimensions are derived from the rclBounds device-space rectangle.
-        var left = EndianReader.ReadInt32(buffer, 8, bigEndian: false);
-        var top = EndianReader.ReadInt32(buffer, 12, bigEndian: false);
-        var right = EndianReader.ReadInt32(buffer, 16, bigEndian: false);
-        var bottom = EndianReader.ReadInt32(buffer, 20, bigEndian: false);
+        long left = EndianReader.ReadInt32(buffer, 8, bigEndian: false);
+        long top = EndianReader.ReadInt32(buffer, 12, bigEndian: false);
+        long right = EndianReader.ReadInt32(buffer, 16, bigEndian: false);
+        long bottom = EndianReader.ReadInt32(buffer, 20, bigEndian: false);
 
-        return new ImageInfo(Format, right - left, bottom - top, frameCount: 1);
+        // rclBounds is inclusive-inclusive (MS-EMF 2.2.9), so a 1-pixel image has left == right.
+        // An empty metafile conventionally stores (0, 0, -1, -1), which yields unknown.
+        return new ImageInfo(Format,
+            HeaderValues.PositiveOrNull(right - left + 1),
+            HeaderValues.PositiveOrNull(bottom - top + 1),
+            frameCount: 1);
     }
 }

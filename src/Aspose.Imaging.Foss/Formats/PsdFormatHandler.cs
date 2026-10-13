@@ -14,13 +14,15 @@ internal sealed class PsdFormatHandler : IFormatHandler
 
     public ImageInfo ReadInfo(Stream stream)
     {
-        var buffer = new byte[26];
+        // Signature(4) + version(2) + reserved(6) + channels(2) + height(4) + width(4) + depth(2).
+        var buffer = new byte[24];
         stream.Seek(0, SeekOrigin.Begin);
-        stream.ReadFully(buffer, 0, buffer.Length);
+        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+            return new ImageInfo(Format);
 
-        var height = (int)EndianReader.ReadUInt32(buffer, 14, bigEndian: true);
-        var width = (int)EndianReader.ReadUInt32(buffer, 18, bigEndian: true);
-        var depth = EndianReader.ReadUInt16(buffer, 22, bigEndian: true);
+        var height = HeaderValues.PositiveOrNull(EndianReader.ReadUInt32(buffer, 14, bigEndian: true));
+        var width = HeaderValues.PositiveOrNull(EndianReader.ReadUInt32(buffer, 18, bigEndian: true));
+        var depth = HeaderValues.PositiveOrNull(EndianReader.ReadUInt16(buffer, 22, bigEndian: true));
 
         return new ImageInfo(Format, width, height, depth, frameCount: 1);
     }

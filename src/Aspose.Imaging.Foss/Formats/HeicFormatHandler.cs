@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -9,15 +8,17 @@ internal sealed class HeicFormatHandler : IFormatHandler
     public ImageFormat Format => ImageFormat.Heic;
     public int SignatureLength => 12;
 
+    // Codec-specific HEIC major brands always match. The generic HEIF brands mif1/mif2 match
+    // unless the compatible brands say the content is AVIF.
     public bool MatchesSignature(byte[] header, int headerLength)
     {
-        if (headerLength < 12) return false;
-        if (header[4] != 'f' || header[5] != 't' || header[6] != 'y' || header[7] != 'p')
+        if (!IsoBaseMediaBox.TryReadFileType(header, headerLength, out var major, out var compatible))
             return false;
-        var brand = Encoding.ASCII.GetString(header, 8, 4);
-        return brand == "heic" || brand == "heix" || brand == "hevc" || brand == "hevx"
-            || brand == "heim" || brand == "heis" || brand == "hevm" || brand == "hevs"
-            || brand == "mif1" || brand == "mif2";
+
+        if (IsoBaseMediaBox.IsHeicBrand(major))
+            return true;
+
+        return (major == "mif1" || major == "mif2") && !compatible.Exists(IsoBaseMediaBox.IsAvifBrand);
     }
 
     public ImageInfo ReadInfo(Stream stream)

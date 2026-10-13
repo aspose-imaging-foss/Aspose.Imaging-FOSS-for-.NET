@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -22,13 +23,19 @@ internal sealed class PngFormatHandler : IFormatHandler
 
     public ImageInfo ReadInfo(Stream stream)
     {
-        var buffer = new byte[26];
+        // Signature(8) + IHDR length(4) + "IHDR"(4) + width(4) + height(4) + bit depth(1).
+        var buffer = new byte[25];
         stream.Seek(0, SeekOrigin.Begin);
-        stream.ReadFully(buffer, 0, buffer.Length);
+        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+            return new ImageInfo(Format);
 
-        var width = (int)EndianReader.ReadUInt32(buffer, 16, bigEndian: true);
-        var height = (int)EndianReader.ReadUInt32(buffer, 20, bigEndian: true);
-        var bitDepth = (int)buffer[24];
+        // IHDR must be the first chunk; anything else means the bytes at 16..24 aren't dimensions.
+        if (Encoding.ASCII.GetString(buffer, 12, 4) != "IHDR")
+            return new ImageInfo(Format);
+
+        var width = HeaderValues.PositiveOrNull(EndianReader.ReadUInt32(buffer, 16, bigEndian: true));
+        var height = HeaderValues.PositiveOrNull(EndianReader.ReadUInt32(buffer, 20, bigEndian: true));
+        var bitDepth = HeaderValues.PositiveOrNull(buffer[24]);
 
         return new ImageInfo(Format, width, height, bitDepth, frameCount: 1);
     }

@@ -11,6 +11,9 @@ internal sealed class TiffFormatHandler : IFormatHandler
     // probe into an unbounded loop.
     private const int MaxIfds = 65536;
 
+    private const ushort ShortType = 3;
+    private const ushort LongType = 4;
+
     public ImageFormat Format => ImageFormat.Tiff;
     public int SignatureLength => 4;
 
@@ -72,18 +75,18 @@ internal sealed class TiffFormatHandler : IFormatHandler
                 }
 
                 var tag = EndianReader.ReadUInt16(entry, 0, bigEndian);
-                var type = EndianReader.ReadUInt16(entry, 2, bigEndian);
 
                 switch (tag)
                 {
                     case 256:
-                        width = ReadIfdValue(entry, type, bigEndian);
+                        width = HeaderValues.PositiveOrNull(ReadFirstValue(stream, entry, bigEndian));
                         break;
                     case 257:
-                        height = ReadIfdValue(entry, type, bigEndian);
+                        height = HeaderValues.PositiveOrNull(ReadFirstValue(stream, entry, bigEndian));
                         break;
                     case 258:
-                        bitDepth = ReadIfdValue(entry, type, bigEndian);
+                        // One value per sample (e.g. 8,8,8 for RGB); the first is reported, as per-channel depth.
+                        bitDepth = HeaderValues.PositiveOrNull(ReadFirstValue(stream, entry, bigEndian));
                         break;
                 }
             }
@@ -99,9 +102,40 @@ internal sealed class TiffFormatHandler : IFormatHandler
         return new ImageInfo(Format, width, height, bitDepth, frameCount == 0 ? null : frameCount);
     }
 
-    // For SHORT/LONG types with a count of 1, TIFF stores the value left-justified in the entry's 4-byte value field.
-    private static int ReadIfdValue(byte[] entry, ushort type, bool bigEndian) =>
-        type == 3
-            ? EndianReader.ReadUInt16(entry, 8, bigEndian)
-            : EndianReader.ReadInt32(entry, 8, bigEndian);
+    // Reads the first value of a SHORT or LONG entry. Values totalling 4 bytes or less are stored
+    // left-justified in the entry's value field; larger arrays live at the offset that field holds.
+    // Any other type is invalid for the tags read here. The stream position is preserved.
+    private static uint? ReadFirstValue(Stream stream, byte[] entry, bool bigEndian)
+    {
+        var type = EndianReader.ReadUInt16(entry, 2, bigEndian);
+        var count = EndianReader.ReadUInt32(entry, 4, bigEndian);
+
+        var size = type switch
+        {
+            ShortType => 2,
+            LongType => 4,
+            _ => 0,
+        };
+
+        if (size == 0 || count == 0)
+            return null;
+
+        if ((ulong)count * (ulong)size <= 4)
+            return ReadValue(entry, 8, size, bigEndian);
+
+        var valueOffset = EndianReader.ReadUInt32(entry, 8, bigEndian);
+        var resumePosition = stream.Position;
+
+        var valueBuf = new byte[4];
+        stream.Seek(valueOffset, SeekOrigin.Begin);
+        var read = stream.ReadFully(valueBuf, 0, size);
+        stream.Seek(resumePosition, SeekOrigin.Begin);
+
+        return read < size ? null : ReadValue(valueBuf, 0, size, bigEndian);
+    }
+
+    private static uint ReadValue(byte[] buffer, int offset, int size, bool bigEndian) =>
+        size == 2
+            ? EndianReader.ReadUInt16(buffer, offset, bigEndian)
+            : EndianReader.ReadUInt32(buffer, offset, bigEndian);
 }

@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Aspose.Imaging.Foss.Internal;
 
@@ -25,9 +26,11 @@ internal sealed class WmfFormatHandler : IFormatHandler
 
     public ImageInfo ReadInfo(Stream stream)
     {
-        var buffer = new byte[22];
+        // Placeable header up to and including Inch: key(4) + hWmf(2) + bounding box(8) + inch(2).
+        var buffer = new byte[16];
         stream.Seek(0, SeekOrigin.Begin);
-        stream.ReadFully(buffer, 0, buffer.Length);
+        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+            return new ImageInfo(Format);
 
         if (!Matches(buffer, PlaceableMagic))
             return new ImageInfo(Format);
@@ -42,10 +45,11 @@ internal sealed class WmfFormatHandler : IFormatHandler
             return new ImageInfo(Format);
 
         // The placeable header expresses bounds in units-per-inch; pixel size assumes a conventional 96 DPI target.
-        var width = (right - left) * 96 / inch;
-        var height = (bottom - top) * 96 / inch;
+        // A box stored with swapped corners (flipped logical axes) still spans the same extent.
+        var width = Math.Abs(right - left) * 96 / inch;
+        var height = Math.Abs(bottom - top) * 96 / inch;
 
-        return new ImageInfo(Format, width, height, frameCount: 1);
+        return new ImageInfo(Format, HeaderValues.PositiveOrNull(width), HeaderValues.PositiveOrNull(height), frameCount: 1);
     }
 
     private static bool Matches(byte[] header, byte[] magic)

@@ -23,8 +23,9 @@ internal sealed class DjVuFormatHandler : IFormatHandler
         if (stream.ReadFully(header, 0, 16) < 16)
             return new ImageInfo(Format);
 
+        // The FORM size counts everything after the size field, including the 4-byte form type.
         var formDataSize = EndianReader.ReadUInt32(header, 8, bigEndian: true);
-        var formEnd = 16L + formDataSize;
+        var formEnd = 12L + formDataSize;
         var formType = Encoding.ASCII.GetString(header, 12, 4);
 
         if (formType == "DJVU")
@@ -35,31 +36,40 @@ internal sealed class DjVuFormatHandler : IFormatHandler
 
         if (formType == "DJVM")
         {
-            int? frameCount = null;
+            // DIRM's file count includes shared dictionaries (DJVI) and thumbnails (THUM), so it
+            // overstates pages. A bundled document instead carries every component inline, and
+            // each page is exactly one FORM:DJVU. An indirect document keeps its pages in separate
+            // files, so its page count can't be known from this file alone.
+            var bundled = false;
+            var pageCount = 0;
             int? width = null;
             int? height = null;
 
             WalkChunks(stream, 16, formEnd, (id, dataStart, dataEnd) =>
             {
-                if (id == "DIRM" && frameCount == null)
+                if (id == "DIRM")
                 {
-                    frameCount = ReadDirmFrameCount(stream, dataStart, dataEnd);
+                    bundled = IsBundledDirectory(stream, dataStart, dataEnd);
                 }
-                else if (id == "FORM" && width == null)
+                else if (id == "FORM")
                 {
                     var subTypeBuf = new byte[4];
                     stream.Seek(dataStart, SeekOrigin.Begin);
                     if (stream.ReadFully(subTypeBuf, 0, 4) >= 4
                         && Encoding.ASCII.GetString(subTypeBuf, 0, 4) == "DJVU")
                     {
-                        var (w, h) = ReadInfoChunk(stream, dataStart + 4, dataEnd);
-                        width = w;
-                        height = h;
+                        pageCount++;
+                        if (width == null)
+                            (width, height) = ReadInfoChunk(stream, dataStart + 4, dataEnd);
                     }
                 }
 
-                return width != null && frameCount != null;
+                return false;
             });
+
+            // A truncated file hides the components past its end, so a count would be a guess.
+            var complete = formEnd <= stream.Length;
+            int? frameCount = bundled && complete && pageCount > 0 ? pageCount : null;
 
             return new ImageInfo(Format, width, height, frameCount: frameCount);
         }
@@ -81,8 +91,8 @@ internal sealed class DjVuFormatHandler : IFormatHandler
             stream.Seek(dataStart, SeekOrigin.Begin);
             if (stream.ReadFully(buf, 0, 4) >= 4)
             {
-                width = (buf[0] << 8) | buf[1];
-                height = (buf[2] << 8) | buf[3];
+                width = HeaderValues.PositiveOrNull((buf[0] << 8) | buf[1]);
+                height = HeaderValues.PositiveOrNull((buf[2] << 8) | buf[3]);
             }
 
             return true;
@@ -91,17 +101,15 @@ internal sealed class DjVuFormatHandler : IFormatHandler
         return (width, height);
     }
 
-    private static int? ReadDirmFrameCount(Stream stream, long dataStart, long dataEnd)
+    // DIRM starts with a flags byte whose top bit marks a bundled (single-file) document.
+    private static bool IsBundledDirectory(Stream stream, long dataStart, long dataEnd)
     {
-        if (dataEnd - dataStart < 3)
-            return null;
+        if (dataEnd - dataStart < 1)
+            return false;
 
-        var buf = new byte[3];
         stream.Seek(dataStart, SeekOrigin.Begin);
-        if (stream.ReadFully(buf, 0, 3) < 3)
-            return null;
-
-        return (buf[0] & 0x80) != 0 ? (int?)((buf[1] << 8) | buf[2]) : null;
+        var flags = stream.ReadByte();
+        return flags != -1 && (flags & 0x80) != 0;
     }
 
     // Walks IFF-style chunks in [regionStart, regionEnd). Callback receives (chunkId, dataStart, dataEnd)
