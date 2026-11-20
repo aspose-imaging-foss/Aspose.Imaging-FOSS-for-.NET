@@ -343,7 +343,8 @@ internal static class SampleImages
         string transferSyntax = ExplicitVrLittleEndian)
     {
         var builder = new ByteBuilder().Zeros(128).Ascii("DICM");
-        AppendTransferSyntax(builder, transferSyntax);
+        AppendFileMetaUid(builder, 0x0010, transferSyntax);
+        AppendFileMetaUid(builder, 0x0012, "2.25.12345"); // Implementation Class UID
 
         if (transferSyntax == ImplicitVrLittleEndian)
         {
@@ -376,10 +377,10 @@ internal static class SampleImages
             .Ascii(ImplicitVrLittleEndian)
             .ToArray();
 
-    private static void AppendTransferSyntax(ByteBuilder builder, string uid)
+    private static void AppendFileMetaUid(ByteBuilder builder, int element, string uid)
     {
         var padded = uid.Length % 2 == 0 ? uid : uid + "\0";
-        builder.UInt16LE(0x0002).UInt16LE(0x0010).Ascii("UI").UInt16LE(padded.Length).Ascii(padded);
+        builder.UInt16LE(0x0002).UInt16LE(element).Ascii("UI").UInt16LE(padded.Length).Ascii(padded);
     }
 
     private static void AppendExplicitUShort(ByteBuilder builder, int group, int element, int value) =>

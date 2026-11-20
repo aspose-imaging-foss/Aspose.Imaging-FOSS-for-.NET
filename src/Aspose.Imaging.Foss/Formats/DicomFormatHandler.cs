@@ -37,7 +37,9 @@ internal sealed class DicomFormatHandler : IFormatHandler
     {
         stream.Seek(132, SeekOrigin.Begin);
 
-        var transferSyntax = ReadFileMetaTransferSyntax(stream);
+        if (!TryReadFileMeta(stream, out var transferSyntax))
+            return new ImageInfo(Format);
+
         var implicitVr = transferSyntax == ImplicitVrLittleEndian;
         var bigEndian = transferSyntax == ExplicitVrBigEndian;
 
@@ -96,15 +98,16 @@ internal sealed class DicomFormatHandler : IFormatHandler
     // the main data set's transfer syntax. Reads through it looking for the Transfer Syntax
     // UID (0002,0010), stopping - and rewinding - as soon as an element outside group 0002
     // is seen, since that's the first element of the main data set.
-    private static string? ReadFileMetaTransferSyntax(Stream stream)
+    private static bool TryReadFileMeta(Stream stream, out string? transferSyntax)
     {
+        transferSyntax = null;
         var tagBuf = new byte[4];
 
         while (true)
         {
             var elementStart = stream.Position;
             if (stream.ReadFully(tagBuf, 0, 4) < 4)
-                return null;
+                return false;
 
             var group = EndianReader.ReadUInt16(tagBuf, 0, bigEndian: false);
             var element = EndianReader.ReadUInt16(tagBuf, 2, bigEndian: false);
@@ -112,27 +115,29 @@ internal sealed class DicomFormatHandler : IFormatHandler
             if (group != 0x0002)
             {
                 stream.Seek(elementStart, SeekOrigin.Begin);
-                return null;
+                return true;
             }
 
             if (!TryReadLength(stream, implicitVr: false, bigEndian: false, out var length) || length == UndefinedLength)
-                return null;
+                return false;
 
-            if (group == 0x0002 && element == 0x0010)
+            if (element == 0x0010)
             {
                 // A UID is at most 64 characters; a larger length is malformed and must not
                 // drive an allocation sized by untrusted input.
                 if (length > MaxUidLength)
-                    return null;
+                    return false;
 
                 var valueBuf = new byte[length];
                 if (stream.ReadFully(valueBuf, 0, (int)length) < length)
-                    return null;
+                    return false;
 
-                return Encoding.ASCII.GetString(valueBuf).TrimEnd('\0', ' ');
+                transferSyntax = Encoding.ASCII.GetString(valueBuf).TrimEnd('\0', ' ');
             }
-
-            stream.Seek(length, SeekOrigin.Current);
+            else
+            {
+                stream.Seek(length, SeekOrigin.Current);
+            }
         }
     }
 
