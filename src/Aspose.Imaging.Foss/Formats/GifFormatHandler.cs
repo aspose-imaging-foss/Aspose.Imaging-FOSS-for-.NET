@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -19,11 +20,11 @@ internal sealed class GifFormatHandler : IFormatHandler
         return signature == "GIF87a" || signature == "GIF89a";
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         stream.Seek(6, SeekOrigin.Begin);
         var screenDescriptor = new byte[7];
-        if (stream.ReadFully(screenDescriptor, 0, screenDescriptor.Length) < screenDescriptor.Length)
+        if (await stream.ReadFullyAsync(screenDescriptor, 0, screenDescriptor.Length).ConfigureAwait(false) < screenDescriptor.Length)
             return new ImageInfo(Format);
 
         var width = EndianReader.ReadUInt16(screenDescriptor, 0, bigEndian: false);
@@ -31,40 +32,40 @@ internal sealed class GifFormatHandler : IFormatHandler
 
         SkipColorTableIfPresent(stream, screenDescriptor[4]);
 
-        var frameCount = CountFrames(stream);
+        var frameCount = await CountFramesAsync(stream).ConfigureAwait(false);
 
         return new ImageInfo(Format,
             HeaderValues.PositiveOrNull(width), HeaderValues.PositiveOrNull(height), frameCount: frameCount);
     }
 
-    private static int? CountFrames(Stream stream)
+    private static async Task<int?> CountFramesAsync(ProbeReader stream)
     {
         var frameCount = 0;
 
         while (true)
         {
-            var blockType = stream.ReadByte();
+            var blockType = await stream.ReadByteAsync().ConfigureAwait(false);
             if (blockType == -1 || blockType == Trailer)
                 break;
 
             if (blockType == ExtensionIntroducer)
             {
-                stream.ReadByte(); // extension label
-                if (!SkipSubBlocks(stream))
+                await stream.ReadByteAsync().ConfigureAwait(false); // extension label
+                if (!await SkipSubBlocksAsync(stream).ConfigureAwait(false))
                     break;
             }
             else if (blockType == ImageDescriptor)
             {
                 var descriptor = new byte[9];
-                if (stream.ReadFully(descriptor, 0, descriptor.Length) < descriptor.Length)
+                if (await stream.ReadFullyAsync(descriptor, 0, descriptor.Length).ConfigureAwait(false) < descriptor.Length)
                     break;
 
                 frameCount++;
 
                 SkipColorTableIfPresent(stream, descriptor[8]);
 
-                stream.ReadByte(); // LZW minimum code size
-                if (!SkipSubBlocks(stream))
+                await stream.ReadByteAsync().ConfigureAwait(false); // LZW minimum code size
+                if (!await SkipSubBlocksAsync(stream).ConfigureAwait(false))
                     break;
             }
             else
@@ -77,7 +78,7 @@ internal sealed class GifFormatHandler : IFormatHandler
         return frameCount == 0 ? null : frameCount;
     }
 
-    private static void SkipColorTableIfPresent(Stream stream, byte packedFields)
+    private static void SkipColorTableIfPresent(ProbeReader stream, byte packedFields)
     {
         if ((packedFields & 0x80) == 0)
             return;
@@ -87,11 +88,11 @@ internal sealed class GifFormatHandler : IFormatHandler
     }
 
     // Sub-blocks are a size byte followed by that many data bytes, terminated by a zero-size block.
-    private static bool SkipSubBlocks(Stream stream)
+    private static async Task<bool> SkipSubBlocksAsync(ProbeReader stream)
     {
         while (true)
         {
-            var size = stream.ReadByte();
+            var size = await stream.ReadByteAsync().ConfigureAwait(false);
             if (size <= 0)
                 return size == 0;
 

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -24,11 +25,11 @@ internal sealed class EmfFormatHandler : IFormatHandler
         return true;
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         var buffer = new byte[24];
         stream.Seek(0, SeekOrigin.Begin);
-        stream.ReadFully(buffer, 0, buffer.Length);
+        await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
 
         // EMF has no explicit width/height field; pixel dimensions are derived from the rclBounds device-space rectangle.
         long left = EndianReader.ReadInt32(buffer, 8, bigEndian: false);

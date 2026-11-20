@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -24,12 +25,12 @@ internal sealed class WmfFormatHandler : IFormatHandler
         return (type == 1 || type == 2) && headerSize == 9 && (version == 0x0100 || version == 0x0300);
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         // Placeable header up to and including Inch: key(4) + hWmf(2) + bounding box(8) + inch(2).
         var buffer = new byte[16];
         stream.Seek(0, SeekOrigin.Begin);
-        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+        if (await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false) < buffer.Length)
             return new ImageInfo(Format);
 
         if (!Matches(buffer, PlaceableMagic))

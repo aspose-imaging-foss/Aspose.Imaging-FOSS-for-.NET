@@ -1,4 +1,4 @@
-using System.IO;
+using System.Threading.Tasks;
 
 namespace Aspose.Imaging.Foss.Internal;
 
@@ -10,5 +10,5 @@ internal interface IFormatHandler
 
     bool MatchesSignature(byte[] header, int headerLength);
 
-    ImageInfo ReadInfo(Stream stream);
+    Task<ImageInfo> ReadInfoAsync(ProbeReader stream);
 }

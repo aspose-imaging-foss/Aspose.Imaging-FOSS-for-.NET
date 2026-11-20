@@ -1,4 +1,4 @@
-using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -21,9 +21,9 @@ internal sealed class HeicFormatHandler : IFormatHandler
         return (major == "mif1" || major == "mif2") && !compatible.Exists(IsoBaseMediaBox.IsAvifBrand);
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
-        var (w, h) = IsoBaseMediaBox.ReadImageSize(stream);
+        var (w, h) = await IsoBaseMediaBox.ReadImageSizeAsync(stream).ConfigureAwait(false);
         return new ImageInfo(Format, w, h);
     }
 }

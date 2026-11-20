@@ -29,8 +29,14 @@ public static class ImageProbe
 
     private static readonly int SignatureBufferSize = ComputeSignatureBufferSize();
 
-    public static ImageFormat DetectFormat(Stream stream) =>
-        FindHandler(stream)?.Format ?? ImageFormat.Unknown;
+    public static ImageFormat DetectFormat(Stream stream)
+    {
+        if (stream.CanSeek)
+            stream.Seek(0, SeekOrigin.Begin);
+        var header = new byte[SignatureBufferSize];
+        var read = stream.ReadFully(header, 0, header.Length);
+        return FindHandler(header, read)?.Format ?? ImageFormat.Unknown;
+    }
 
     public static ImageFormat DetectFormat(byte[] data)
     {
@@ -40,28 +46,12 @@ public static class ImageProbe
 
     public static ImageInfo Probe(Stream stream)
     {
-        var seekable = EnsureSeekable(stream);
-        try
-        {
-            var handler = FindHandler(seekable);
-            if (handler is null)
-                return new ImageInfo(ImageFormat.Unknown);
+        using var buffer = stream.CanSeek ? null : new MemoryStream();
+        if (buffer != null)
+            stream.CopyTo(buffer);
 
-            seekable.Seek(0, SeekOrigin.Begin);
-            try
-            {
-                return handler.ReadInfo(seekable);
-            }
-            catch (Exception)
-            {
-                return new ImageInfo(handler.Format);
-            }
-        }
-        finally
-        {
-            if (!ReferenceEquals(seekable, stream))
-                seekable.Dispose();
-        }
+        var reader = new ProbeReader(buffer ?? stream, useAsync: false);
+        return ProbeSeekableAsync(reader, CancellationToken.None).GetAwaiter().GetResult();
     }
 
     public static ImageInfo Probe(byte[] data)
@@ -88,45 +78,24 @@ public static class ImageProbe
 
     public static async Task<ImageInfo> ProbeAsync(Stream stream, CancellationToken cancellationToken = default)
     {
-        var seekable = await EnsureSeekableAsync(stream, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var handler = FindHandler(seekable);
-            if (handler is null)
-                return new ImageInfo(ImageFormat.Unknown);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var buffer = stream.CanSeek ? null : new MemoryStream();
+        if (buffer != null)
+            await stream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
 
-            seekable.Seek(0, SeekOrigin.Begin);
-            try
-            {
-                return handler.ReadInfo(seekable);
-            }
-            catch (Exception)
-            {
-                return new ImageInfo(handler.Format);
-            }
-        }
-        finally
-        {
-            if (!ReferenceEquals(seekable, stream))
-                seekable.Dispose();
-        }
+        var reader = new ProbeReader(buffer ?? stream, useAsync: true, cancellationToken);
+        return await ProbeSeekableAsync(reader, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<ImageInfo> ProbeFileAsync(string path, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
         return await ProbeAsync(stream, cancellationToken).ConfigureAwait(false);
     }
 
-    // Non-seekable streams are matched from their current position; DetectFormat only needs the
-    // signature bytes, so it doesn't buffer the whole stream the way Probe does.
-    private static IFormatHandler? FindHandler(Stream stream)
+    private static IFormatHandler? FindHandler(byte[] buffer, int read)
     {
-        if (stream.CanSeek)
-            stream.Seek(0, SeekOrigin.Begin);
-        var buffer = new byte[SignatureBufferSize];
-        var read = stream.ReadFully(buffer, 0, buffer.Length);
-
         foreach (var handler in Handlers)
         {
             if (handler.SignatureLength <= read && handler.MatchesSignature(buffer, read))
@@ -136,26 +105,27 @@ public static class ImageProbe
         return null;
     }
 
-    private static async Task<Stream> EnsureSeekableAsync(Stream stream, CancellationToken cancellationToken)
+    private static async Task<ImageInfo> ProbeSeekableAsync(ProbeReader reader, CancellationToken cancellationToken)
     {
-        if (stream.CanSeek)
-            return stream;
+        reader.Seek(0, SeekOrigin.Begin);
+        var header = new byte[SignatureBufferSize];
+        var read = await reader.ReadFullyAsync(header, 0, header.Length).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var handler = FindHandler(header, read);
+        if (handler is null)
+            return new ImageInfo(ImageFormat.Unknown);
 
-        var buffered = new MemoryStream();
-        await stream.CopyToAsync(buffered, 81920, cancellationToken).ConfigureAwait(false);
-        buffered.Seek(0, SeekOrigin.Begin);
-        return buffered;
-    }
-
-    private static Stream EnsureSeekable(Stream stream)
-    {
-        if (stream.CanSeek)
-            return stream;
-
-        var buffered = new MemoryStream();
-        stream.CopyTo(buffered);
-        buffered.Seek(0, SeekOrigin.Begin);
-        return buffered;
+        reader.Seek(0, SeekOrigin.Begin);
+        try
+        {
+            var info = await handler.ReadInfoAsync(reader).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return info;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return new ImageInfo(handler.Format);
+        }
     }
 
     private static int ComputeSignatureBufferSize()

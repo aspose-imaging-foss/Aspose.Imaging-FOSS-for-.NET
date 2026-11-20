@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -21,12 +22,12 @@ internal sealed class PngFormatHandler : IFormatHandler
         return true;
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         // Signature(8) + IHDR length(4) + "IHDR"(4) + width(4) + height(4) + bit depth(1).
         var buffer = new byte[25];
         stream.Seek(0, SeekOrigin.Begin);
-        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+        if (await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false) < buffer.Length)
             return new ImageInfo(Format);
 
         // IHDR must be the first chunk; anything else means the bytes at 16..24 aren't dimensions.

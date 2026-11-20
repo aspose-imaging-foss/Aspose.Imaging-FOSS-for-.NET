@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -33,11 +34,12 @@ internal sealed class DicomFormatHandler : IFormatHandler
     public bool MatchesSignature(byte[] header, int headerLength) =>
         Encoding.ASCII.GetString(header, 128, 4) == "DICM";
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         stream.Seek(132, SeekOrigin.Begin);
 
-        if (!TryReadFileMeta(stream, out var transferSyntax))
+        var (hasDataSet, transferSyntax) = await ReadFileMetaAsync(stream).ConfigureAwait(false);
+        if (!hasDataSet)
             return new ImageInfo(Format);
 
         var implicitVr = transferSyntax == ImplicitVrLittleEndian;
@@ -52,7 +54,7 @@ internal sealed class DicomFormatHandler : IFormatHandler
 
         while (remainingElements-- > 0 && (rows is null || columns is null || bitsAllocated is null))
         {
-            if (stream.ReadFully(tagBuf, 0, 4) < 4)
+            if (await stream.ReadFullyAsync(tagBuf, 0, 4).ConfigureAwait(false) < 4)
                 break;
 
             var group = EndianReader.ReadUInt16(tagBuf, 0, bigEndian);
@@ -61,17 +63,15 @@ internal sealed class DicomFormatHandler : IFormatHandler
             if (group == 0x7FE0 && element == 0x0010) // PixelData: image metadata is behind us
                 break;
 
-            if (!TryReadLength(stream, implicitVr, bigEndian, out var length))
-                break;
-
-            if (length == UndefinedLength)
+            var length = await ReadLengthAsync(stream, implicitVr, bigEndian).ConfigureAwait(false);
+            if (length is null || length == UndefinedLength)
                 break; // undefined-length sequence/encapsulated data; not walked
 
             if (group == 0x0028 && length == 2 &&
                 (element == 0x0010 || element == 0x0011 || element == 0x0100))
             {
                 var valueBuf = new byte[2];
-                if (stream.ReadFully(valueBuf, 0, 2) < 2)
+                if (await stream.ReadFullyAsync(valueBuf, 0, 2).ConfigureAwait(false) < 2)
                     break;
 
                 var value = EndianReader.ReadUInt16(valueBuf, 0, bigEndian);
@@ -84,7 +84,7 @@ internal sealed class DicomFormatHandler : IFormatHandler
             }
             else
             {
-                stream.Seek(length, SeekOrigin.Current);
+                stream.Seek(length.Value, SeekOrigin.Current);
             }
         }
 
@@ -98,16 +98,16 @@ internal sealed class DicomFormatHandler : IFormatHandler
     // the main data set's transfer syntax. Reads through it looking for the Transfer Syntax
     // UID (0002,0010), stopping - and rewinding - as soon as an element outside group 0002
     // is seen, since that's the first element of the main data set.
-    private static bool TryReadFileMeta(Stream stream, out string? transferSyntax)
+    private static async Task<(bool hasDataSet, string? transferSyntax)> ReadFileMetaAsync(ProbeReader stream)
     {
-        transferSyntax = null;
+        string? transferSyntax = null;
         var tagBuf = new byte[4];
 
         while (true)
         {
             var elementStart = stream.Position;
-            if (stream.ReadFully(tagBuf, 0, 4) < 4)
-                return false;
+            if (await stream.ReadFullyAsync(tagBuf, 0, 4).ConfigureAwait(false) < 4)
+                return (false, null);
 
             var group = EndianReader.ReadUInt16(tagBuf, 0, bigEndian: false);
             var element = EndianReader.ReadUInt16(tagBuf, 2, bigEndian: false);
@@ -115,49 +115,47 @@ internal sealed class DicomFormatHandler : IFormatHandler
             if (group != 0x0002)
             {
                 stream.Seek(elementStart, SeekOrigin.Begin);
-                return true;
+                return (true, transferSyntax);
             }
 
-            if (!TryReadLength(stream, implicitVr: false, bigEndian: false, out var length) || length == UndefinedLength)
-                return false;
+            var length = await ReadLengthAsync(stream, implicitVr: false, bigEndian: false).ConfigureAwait(false);
+            if (length is null || length == UndefinedLength)
+                return (false, null);
 
             if (element == 0x0010)
             {
                 // A UID is at most 64 characters; a larger length is malformed and must not
                 // drive an allocation sized by untrusted input.
                 if (length > MaxUidLength)
-                    return false;
+                    return (false, null);
 
-                var valueBuf = new byte[length];
-                if (stream.ReadFully(valueBuf, 0, (int)length) < length)
-                    return false;
+                var valueBuf = new byte[length.Value];
+                if (await stream.ReadFullyAsync(valueBuf, 0, valueBuf.Length).ConfigureAwait(false) < valueBuf.Length)
+                    return (false, null);
 
                 transferSyntax = Encoding.ASCII.GetString(valueBuf).TrimEnd('\0', ' ');
             }
             else
             {
-                stream.Seek(length, SeekOrigin.Current);
+                stream.Seek(length.Value, SeekOrigin.Current);
             }
         }
     }
 
-    private static bool TryReadLength(Stream stream, bool implicitVr, bool bigEndian, out uint length)
+    private static async Task<uint?> ReadLengthAsync(ProbeReader stream, bool implicitVr, bool bigEndian)
     {
-        length = 0;
-
         if (implicitVr)
         {
             var lenBuf = new byte[4];
-            if (stream.ReadFully(lenBuf, 0, 4) < 4)
-                return false;
+            if (await stream.ReadFullyAsync(lenBuf, 0, 4).ConfigureAwait(false) < 4)
+                return null;
 
-            length = EndianReader.ReadUInt32(lenBuf, 0, bigEndian);
-            return true;
+            return EndianReader.ReadUInt32(lenBuf, 0, bigEndian);
         }
 
         var vrBuf = new byte[2];
-        if (stream.ReadFully(vrBuf, 0, 2) < 2)
-            return false;
+        if (await stream.ReadFullyAsync(vrBuf, 0, 2).ConfigureAwait(false) < 2)
+            return null;
 
         var vr = Encoding.ASCII.GetString(vrBuf, 0, 2);
 
@@ -165,20 +163,17 @@ internal sealed class DicomFormatHandler : IFormatHandler
         {
             var reserved = new byte[2];
             var lenBuf = new byte[4];
-            if (stream.ReadFully(reserved, 0, 2) < 2 || stream.ReadFully(lenBuf, 0, 4) < 4)
-                return false;
+            if (await stream.ReadFullyAsync(reserved, 0, 2).ConfigureAwait(false) < 2 ||
+                await stream.ReadFullyAsync(lenBuf, 0, 4).ConfigureAwait(false) < 4)
+                return null;
 
-            length = EndianReader.ReadUInt32(lenBuf, 0, bigEndian);
-        }
-        else
-        {
-            var lenBuf = new byte[2];
-            if (stream.ReadFully(lenBuf, 0, 2) < 2)
-                return false;
-
-            length = EndianReader.ReadUInt16(lenBuf, 0, bigEndian);
+            return EndianReader.ReadUInt32(lenBuf, 0, bigEndian);
         }
 
-        return true;
+        var shortLength = new byte[2];
+        if (await stream.ReadFullyAsync(shortLength, 0, 2).ConfigureAwait(false) < 2)
+            return null;
+
+        return EndianReader.ReadUInt16(shortLength, 0, bigEndian);
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Aspose.Imaging.Foss.Internal;
 
@@ -57,29 +58,29 @@ internal static class IsoBaseMediaBox
     // for grid images (e.g. iPhone HEIC), where ipco also holds a smaller ispe for the tiles.
     // When the association can't be resolved, the largest ispe is used: tiles, thumbnails and
     // auxiliary images are never larger than the image they belong to.
-    internal static (int? width, int? height) ReadImageSize(Stream stream)
+    internal static async Task<(int? width, int? height)> ReadImageSizeAsync(ProbeReader stream)
     {
-        if (!TryFindChild(stream, 0, stream.Length, "meta", out var meta))
+        if (await FindChildAsync(stream, 0, stream.Length, "meta").ConfigureAwait(false) is not Box meta)
             return (null, null);
 
         // meta is a FullBox: version(1) + flags(3) precede nested boxes.
         var metaChildrenStart = meta.DataStart + 4;
 
-        if (!TryFindChild(stream, metaChildrenStart, meta.End, "iprp", out var iprp))
+        if (await FindChildAsync(stream, metaChildrenStart, meta.End, "iprp").ConfigureAwait(false) is not Box iprp)
             return (null, null);
 
-        if (!TryFindChild(stream, iprp.DataStart, iprp.End, "ipco", out var ipco))
+        if (await FindChildAsync(stream, iprp.DataStart, iprp.End, "ipco").ConfigureAwait(false) is not Box ipco)
             return (null, null);
 
-        var sizes = ReadIspeProperties(stream, ipco);
+        var sizes = await ReadIspePropertiesAsync(stream, ipco).ConfigureAwait(false);
         if (sizes.Count == 0)
             return (null, null);
 
         (uint width, uint height)? chosen = null;
 
-        if (TryFindChild(stream, metaChildrenStart, meta.End, "pitm", out var pitm) &&
-            ReadPrimaryItemId(stream, pitm) is uint primaryItemId &&
-            FindItemIspeIndex(stream, iprp, primaryItemId, sizes) is int index)
+        if (await FindChildAsync(stream, metaChildrenStart, meta.End, "pitm").ConfigureAwait(false) is Box pitm &&
+            await ReadPrimaryItemIdAsync(stream, pitm).ConfigureAwait(false) is uint primaryItemId &&
+            await FindItemIspeIndexAsync(stream, iprp, primaryItemId, sizes).ConfigureAwait(false) is int index)
         {
             chosen = sizes[index];
         }
@@ -90,12 +91,13 @@ internal static class IsoBaseMediaBox
     }
 
     // Maps each ispe in ipco to its 1-based property index, as ipma refers to them.
-    private static Dictionary<int, (uint width, uint height)> ReadIspeProperties(Stream stream, Box ipco)
+    private static async Task<Dictionary<int, (uint width, uint height)>> ReadIspePropertiesAsync(ProbeReader stream, Box ipco)
     {
         var sizes = new Dictionary<int, (uint, uint)>();
         var index = 0;
 
-        foreach (var property in ReadChildren(stream, ipco.DataStart, ipco.End))
+        var children = new BoxReader(stream, ipco.DataStart, ipco.End);
+        while (await children.ReadNextAsync().ConfigureAwait(false) is Box property)
         {
             if (++index > MaxPropertyIndex)
                 break;
@@ -104,7 +106,7 @@ internal static class IsoBaseMediaBox
                 continue;
 
             // ispe is a FullBox: version(1) + flags(3) + image_width(4 BE) + image_height(4 BE).
-            var data = ReadData(stream, property, maxLength: 64);
+            var data = await ReadDataAsync(stream, property, maxLength: 64).ConfigureAwait(false);
             if (data is null || data.Length < 12)
                 continue;
 
@@ -115,10 +117,10 @@ internal static class IsoBaseMediaBox
         return sizes;
     }
 
-    private static uint? ReadPrimaryItemId(Stream stream, Box pitm)
+    private static async Task<uint?> ReadPrimaryItemIdAsync(ProbeReader stream, Box pitm)
     {
         // FullBox header(4), then item_ID: 16-bit in version 0, 32-bit in version 1.
-        var data = ReadData(stream, pitm, maxLength: 64);
+        var data = await ReadDataAsync(stream, pitm, maxLength: 64).ConfigureAwait(false);
         if (data is null || data.Length < 6)
             return null;
 
@@ -129,15 +131,16 @@ internal static class IsoBaseMediaBox
     }
 
     // Returns the index of the first ispe that an ipma box associates with the item.
-    private static int? FindItemIspeIndex(Stream stream, Box iprp, uint itemId,
+    private static async Task<int?> FindItemIspeIndexAsync(ProbeReader stream, Box iprp, uint itemId,
         Dictionary<int, (uint, uint)> sizes)
     {
-        foreach (var ipma in ReadChildren(stream, iprp.DataStart, iprp.End))
+        var children = new BoxReader(stream, iprp.DataStart, iprp.End);
+        while (await children.ReadNextAsync().ConfigureAwait(false) is Box ipma)
         {
             if (ipma.Type != "ipma")
                 continue;
 
-            var data = ReadData(stream, ipma, MaxIpmaLength);
+            var data = await ReadDataAsync(stream, ipma, MaxIpmaLength).ConfigureAwait(false);
             if (data is not null && FindIspeIndexInIpma(data, itemId, sizes) is int index)
                 return index;
         }
@@ -215,23 +218,20 @@ internal static class IsoBaseMediaBox
         return largest;
     }
 
-    private static bool TryFindChild(Stream stream, long start, long end, string type, out Box box)
+    private static async Task<Box?> FindChildAsync(ProbeReader stream, long start, long end, string type)
     {
-        foreach (var child in ReadChildren(stream, start, end))
+        var children = new BoxReader(stream, start, end);
+        while (await children.ReadNextAsync().ConfigureAwait(false) is Box child)
         {
             if (child.Type == type)
-            {
-                box = child;
-                return true;
-            }
+                return child;
         }
 
-        box = default;
-        return false;
+        return null;
     }
 
     // Reads a box's payload, or null when it is larger than the caller is willing to buffer.
-    private static byte[]? ReadData(Stream stream, Box box, long maxLength)
+    private static async Task<byte[]?> ReadDataAsync(ProbeReader stream, Box box, long maxLength)
     {
         var length = box.End - box.DataStart;
         if (length < 0 || length > maxLength)
@@ -239,7 +239,7 @@ internal static class IsoBaseMediaBox
 
         var data = new byte[length];
         stream.Seek(box.DataStart, SeekOrigin.Begin);
-        var read = stream.ReadFully(data, 0, data.Length);
+        var read = await stream.ReadFullyAsync(data, 0, data.Length).ConfigureAwait(false);
         if (read < data.Length)
             Array.Resize(ref data, read);
 
@@ -249,16 +249,19 @@ internal static class IsoBaseMediaBox
     // Enumerates the boxes in [start, end). Each box is clamped to its parent's end, so a
     // truncated or overstated child can't send the walk outside the region. Every step advances
     // by at least the 8-byte header, so the walk always terminates.
-    private static IEnumerable<Box> ReadChildren(Stream stream, long start, long end)
+    private sealed class BoxReader(ProbeReader stream, long start, long end)
     {
-        var header = new byte[16];
-        var position = start;
+        private readonly byte[] header = new byte[16];
+        private long position = start;
 
-        while (position + 8 <= end)
+        public async Task<Box?> ReadNextAsync()
         {
+            if (end - position < 8)
+                return null;
+
             stream.Seek(position, SeekOrigin.Begin);
-            if (stream.ReadFully(header, 0, 8) < 8)
-                yield break;
+            if (await stream.ReadFullyAsync(header, 0, 8).ConfigureAwait(false) < 8)
+                return null;
 
             var sizeField = EndianReader.ReadUInt32(header, 0, bigEndian: true);
             var type = Encoding.ASCII.GetString(header, 4, 4);
@@ -269,14 +272,14 @@ internal static class IsoBaseMediaBox
             if (sizeField == 1)
             {
                 // 64-bit extended size immediately follows the 8-byte header.
-                if (stream.ReadFully(header, 8, 8) < 8)
-                    yield break;
+                if (await stream.ReadFullyAsync(header, 8, 8).ConfigureAwait(false) < 8)
+                    return null;
 
                 var extSize = ((ulong)EndianReader.ReadUInt32(header, 8, bigEndian: true) << 32)
                     | EndianReader.ReadUInt32(header, 12, bigEndian: true);
 
                 if (extSize < 16)
-                    yield break;
+                    return null;
 
                 dataStart = position + 16;
                 boxEnd = extSize > (ulong)(end - position) ? end : position + (long)extSize;
@@ -288,14 +291,13 @@ internal static class IsoBaseMediaBox
             else
             {
                 if (sizeField < 8)
-                    yield break;
+                    return null;
 
                 boxEnd = sizeField > end - position ? end : position + sizeField;
             }
 
-            yield return new Box(type, dataStart, boxEnd);
-
             position = boxEnd;
+            return new Box(type, dataStart, boxEnd);
         }
     }
 

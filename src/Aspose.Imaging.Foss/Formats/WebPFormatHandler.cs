@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -16,12 +17,12 @@ internal sealed class WebPFormatHandler : IFormatHandler
         return riff == "RIFF" && webp == "WEBP";
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         // RIFF header(12) + chunk header(8) + the longest bitstream header read below(10).
         var buffer = new byte[30];
         stream.Seek(0, SeekOrigin.Begin);
-        var read = stream.ReadFully(buffer, 0, buffer.Length);
+        var read = await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
         if (read < 16)
             return new ImageInfo(Format);
 

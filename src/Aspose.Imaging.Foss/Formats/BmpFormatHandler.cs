@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -20,11 +21,11 @@ internal sealed class BmpFormatHandler : IFormatHandler
         header[0] == (byte)'B' && header[1] == (byte)'M' &&
         IsKnownDibHeaderSize(EndianReader.ReadUInt32(header, 14, bigEndian: false));
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         var buffer = new byte[30];
         stream.Seek(0, SeekOrigin.Begin);
-        var read = stream.ReadFully(buffer, 0, buffer.Length);
+        var read = await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
 
         var dibHeaderSize = EndianReader.ReadUInt32(buffer, 14, bigEndian: false);
 

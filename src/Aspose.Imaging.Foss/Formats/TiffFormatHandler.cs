@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -24,11 +25,11 @@ internal sealed class TiffFormatHandler : IFormatHandler
         return littleEndian || bigEndian;
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         var header = new byte[8];
         stream.Seek(0, SeekOrigin.Begin);
-        stream.ReadFully(header, 0, header.Length);
+        await stream.ReadFullyAsync(header, 0, header.Length).ConfigureAwait(false);
 
         var bigEndian = header[0] == 'M';
         var ifdOffset = EndianReader.ReadUInt32(header, 4, bigEndian);
@@ -46,7 +47,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
         while (ifdOffset != 0 && visitedOffsets.Add(ifdOffset) && frameCount < MaxIfds)
         {
             stream.Seek(ifdOffset, SeekOrigin.Begin);
-            if (stream.ReadFully(countBuf, 0, 2) < 2)
+            if (await stream.ReadFullyAsync(countBuf, 0, 2).ConfigureAwait(false) < 2)
                 break;
 
             var entryCount = EndianReader.ReadUInt16(countBuf, 0, bigEndian);
@@ -58,7 +59,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
             {
                 frameCount++;
                 stream.Seek(entryCount * 12L, SeekOrigin.Current);
-                if (stream.ReadFully(nextOffsetBuf, 0, 4) < 4)
+                if (await stream.ReadFullyAsync(nextOffsetBuf, 0, 4).ConfigureAwait(false) < 4)
                     break;
 
                 ifdOffset = EndianReader.ReadUInt32(nextOffsetBuf, 0, bigEndian);
@@ -68,7 +69,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
             var readOk = true;
             for (var i = 0; i < entryCount; i++)
             {
-                if (stream.ReadFully(entry, 0, entry.Length) < entry.Length)
+                if (await stream.ReadFullyAsync(entry, 0, entry.Length).ConfigureAwait(false) < entry.Length)
                 {
                     readOk = false;
                     break;
@@ -79,21 +80,21 @@ internal sealed class TiffFormatHandler : IFormatHandler
                 switch (tag)
                 {
                     case 256:
-                        width = HeaderValues.PositiveOrNull(ReadFirstValue(stream, entry, bigEndian));
+                        width = HeaderValues.PositiveOrNull(await ReadFirstValueAsync(stream, entry, bigEndian).ConfigureAwait(false));
                         break;
                     case 257:
-                        height = HeaderValues.PositiveOrNull(ReadFirstValue(stream, entry, bigEndian));
+                        height = HeaderValues.PositiveOrNull(await ReadFirstValueAsync(stream, entry, bigEndian).ConfigureAwait(false));
                         break;
                     case 258:
                         // One value per sample (e.g. 8,8,8 for RGB); the first is reported, as per-channel depth.
-                        bitDepth = HeaderValues.PositiveOrNull(ReadFirstValue(stream, entry, bigEndian));
+                        bitDepth = HeaderValues.PositiveOrNull(await ReadFirstValueAsync(stream, entry, bigEndian).ConfigureAwait(false));
                         break;
                 }
             }
 
             frameCount++;
 
-            if (!readOk || stream.ReadFully(nextOffsetBuf, 0, 4) < 4)
+            if (!readOk || await stream.ReadFullyAsync(nextOffsetBuf, 0, 4).ConfigureAwait(false) < 4)
                 break;
 
             ifdOffset = EndianReader.ReadUInt32(nextOffsetBuf, 0, bigEndian);
@@ -105,7 +106,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
     // Reads the first value of a SHORT or LONG entry. Values totalling 4 bytes or less are stored
     // left-justified in the entry's value field; larger arrays live at the offset that field holds.
     // Any other type is invalid for the tags read here. The stream position is preserved.
-    private static uint? ReadFirstValue(Stream stream, byte[] entry, bool bigEndian)
+    private static async Task<uint?> ReadFirstValueAsync(ProbeReader stream, byte[] entry, bool bigEndian)
     {
         var type = EndianReader.ReadUInt16(entry, 2, bigEndian);
         var count = EndianReader.ReadUInt32(entry, 4, bigEndian);
@@ -128,7 +129,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
 
         var valueBuf = new byte[4];
         stream.Seek(valueOffset, SeekOrigin.Begin);
-        var read = stream.ReadFully(valueBuf, 0, size);
+        var read = await stream.ReadFullyAsync(valueBuf, 0, size).ConfigureAwait(false);
         stream.Seek(resumePosition, SeekOrigin.Begin);
 
         return read < size ? null : ReadValue(valueBuf, 0, size, bigEndian);

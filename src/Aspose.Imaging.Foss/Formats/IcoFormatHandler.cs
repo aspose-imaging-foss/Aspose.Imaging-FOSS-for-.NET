@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -20,12 +21,12 @@ internal sealed class IcoFormatHandler : IFormatHandler
         return true;
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         // ICONDIR(6) + the first ICONDIRENTRY up to and including its bit count(8).
         var buffer = new byte[14];
         stream.Seek(0, SeekOrigin.Begin);
-        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+        if (await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false) < buffer.Length)
             return new ImageInfo(Format);
 
         var imageCount = EndianReader.ReadUInt16(buffer, 4, bigEndian: false);

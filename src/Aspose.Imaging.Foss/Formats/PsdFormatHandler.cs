@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -12,12 +13,12 @@ internal sealed class PsdFormatHandler : IFormatHandler
     public bool MatchesSignature(byte[] header, int headerLength) =>
         Encoding.ASCII.GetString(header, 0, 4) == "8BPS";
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         // Signature(4) + version(2) + reserved(6) + channels(2) + height(4) + width(4) + depth(2).
         var buffer = new byte[24];
         stream.Seek(0, SeekOrigin.Begin);
-        if (stream.ReadFully(buffer, 0, buffer.Length) < buffer.Length)
+        if (await stream.ReadFullyAsync(buffer, 0, buffer.Length).ConfigureAwait(false) < buffer.Length)
             return new ImageInfo(Format);
 
         var height = HeaderValues.PositiveOrNull(EndianReader.ReadUInt32(buffer, 14, bigEndian: true));

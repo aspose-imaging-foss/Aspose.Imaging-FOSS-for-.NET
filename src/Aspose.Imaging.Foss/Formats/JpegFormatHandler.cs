@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading.Tasks;
 using Aspose.Imaging.Foss.Internal;
 
 namespace Aspose.Imaging.Foss.Formats;
@@ -20,19 +21,19 @@ internal sealed class JpegFormatHandler : IFormatHandler
         return true;
     }
 
-    public ImageInfo ReadInfo(Stream stream)
+    public async Task<ImageInfo> ReadInfoAsync(ProbeReader stream)
     {
         stream.Seek(2, SeekOrigin.Begin);
 
         while (true)
         {
-            var marker = ReadNextMarkerCode(stream);
+            var marker = await ReadNextMarkerCodeAsync(stream).ConfigureAwait(false);
 
             if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD9))
                 continue;
 
             var lengthBuf = new byte[2];
-            if (stream.ReadFully(lengthBuf, 0, 2) < 2)
+            if (await stream.ReadFullyAsync(lengthBuf, 0, 2).ConfigureAwait(false) < 2)
                 break;
 
             // The length field counts itself, so anything below 2 is malformed; skipping by it
@@ -44,7 +45,7 @@ internal sealed class JpegFormatHandler : IFormatHandler
             if (IsStartOfFrameMarker(marker))
             {
                 var sof = new byte[5];
-                if (stream.ReadFully(sof, 0, 5) < 5)
+                if (await stream.ReadFullyAsync(sof, 0, 5).ConfigureAwait(false) < 5)
                     break;
 
                 var precision = HeaderValues.PositiveOrNull(sof[0]);
@@ -67,16 +68,16 @@ internal sealed class JpegFormatHandler : IFormatHandler
     private static bool IsStartOfFrameMarker(byte marker) =>
         marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
 
-    private static byte ReadNextMarkerCode(Stream stream)
+    private static async Task<byte> ReadNextMarkerCodeAsync(ProbeReader stream)
     {
         int b;
-        while ((b = stream.ReadByte()) != 0xFF)
+        while ((b = await stream.ReadByteAsync().ConfigureAwait(false)) != 0xFF)
         {
             if (b == -1)
                 throw new EndOfStreamException();
         }
 
-        while ((b = stream.ReadByte()) == 0xFF)
+        while ((b = await stream.ReadByteAsync().ConfigureAwait(false)) == 0xFF)
         {
         }
 
