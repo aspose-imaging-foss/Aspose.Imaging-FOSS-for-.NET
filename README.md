@@ -60,10 +60,9 @@ flowchart TD
   width, height, bit depth, and frame count — for PNG, JPEG, GIF, BMP, WEBP (lossy, lossless,
   and extended), ICO, TIFF, PSD, EMF, WMF, DICOM, DJVU, AVIF, and HEIC/HEIF, as a free open
   source .NET image manipulation API with no decode step.
-- Counts real multi-frame and multi-page content where the container format actually carries
-  it: GIF walks its image-descriptor blocks, ICO its directory entries, TIFF its IFD chain, and
-  a bundled multi-page DJVU (DJVM) its `FORM:DJVU` page components — not the DIRM file count,
-  which also includes shared dictionaries and thumbnails.
+- Reads the declared animation frame count from APNG and counts frame chunks in animated WebP.
+  GIF uses image descriptors, ICO uses the directory count, TIFF follows its IFD chain, and
+  bundled DJVU (DJVM) counts `FORM:DJVU` page components.
 - DICOM parsing covers Implicit VR Little Endian and Explicit VR Little/Big Endian transfer
   syntaxes — including the common compressed ones, whose non-pixel elements are encoded
   Explicit VR Little Endian — and reads `Rows`/`Columns`/`BitsAllocated` directly from the data
@@ -90,11 +89,11 @@ that full range in one place.
 
 | Format | Detect | Width / Height | Bit depth | Frame count |
 |--------|:------:|:---------------:|:---------:|:-----------:|
-| PNG    | ✅ | ✅ | ✅ | — |
+| PNG / APNG | ✅ | ✅ | ✅ | ✅ |
 | JPEG   | ✅ | ✅ | ✅ | — |
 | GIF    | ✅ | ✅ | — | ✅ |
 | BMP    | ✅ | ✅ | ✅ | — |
-| WEBP (lossy / lossless / extended) | ✅ | ✅ | — | — |
+| WebP (lossy / lossless / extended) | ✅ | ✅ | — | ✅ |
 | ICO    | ✅ | ✅ | ✅ | ✅ |
 | TIFF   | ✅ | ✅ | ✅ | ✅ |
 | PSD    | ✅ | ✅ | ✅ | — |
@@ -105,10 +104,9 @@ that full range in one place.
 | AVIF (still / animated) | ✅ | ✅ | — | — |
 | HEIC / HEIF | ✅ | ✅ | — | — |
 
-Frame count is marked ✅ only where the container format genuinely records more than one
-frame or page (GIF, ICO, TIFF, and multi-page DJVU); every other format's `FrameCount` comes
-back as a fixed `1` on a successful parse, which this table does not count as a real frame
-count.
+A check in the frame count column indicates support for counting multiple frames or pages.
+Static PNG and WebP report `1`. JPEG, BMP, PSD, EMF, and placeable WMF also report `1` on a
+successful header parse. DICOM, AVIF, and HEIC/HEIF currently return `null` for `FrameCount`.
 
 ## Installation
 
@@ -189,9 +187,8 @@ Console.WriteLine($"{info.Format}: {info.Width}x{info.Height}");
 
 ### Count Frames in a Multi-Frame GIF or a Multi-Page DJVU
 
-`FrameCount` is only populated with a real count for formats whose container actually records
-one — an animated GIF's image-descriptor blocks, or the page components of a bundled
-multi-page DJVU (DJVM) document:
+`FrameCount` gives the number of image descriptors in a GIF or the number of pages in a
+bundled DJVU document.
 
 ```csharp
 using Aspose.Imaging.Foss;
@@ -261,11 +258,10 @@ var format = ImageProbe.DetectFormat(networkStream);
 - **Detection and metadata only.** `ImageProbe` identifies a format and reads its header fields;
   it never decodes pixel data, so there is no rendering, editing, or format-conversion
   capability anywhere in the library.
-- **Frame count reflects only what the container itself records.** It is a real, computed count
-  for GIF, ICO, TIFF, and bundled multi-page DJVU (DJVM); every other supported format reports a
-  fixed `1` for a successfully parsed header, since none of their headers carry a genuine frame
-  or page count. An indirect (multi-file) DJVM document, or a truncated bundled one, reports
-  `FrameCount` as `null`, since its pages can't all be seen from the one file.
+- **Animation and page counts.** APNG reports the count declared in `acTL` before the first
+  `IDAT`. A separate default image is excluded. Animated WebP counts top-level `ANMF` chunks
+  within the declared RIFF container and returns `null` if that container is truncated.
+  Indirect (multi-file) DJVM and truncated bundled DJVM also return `null` for `FrameCount`.
 - **Non-placeable WMF is detected but not dimensioned.** The classic (non-placeable) WMF header
   carries no bounding rectangle, so `Probe` returns a format-only `ImageInfo` for it; only the
   placeable WMF header (identified by its own magic number) yields `Width`/`Height`.

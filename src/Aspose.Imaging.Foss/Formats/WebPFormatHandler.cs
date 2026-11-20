@@ -28,6 +28,7 @@ internal sealed class WebPFormatHandler : IFormatHandler
 
         var fourCc = Encoding.ASCII.GetString(buffer, 12, 4);
         int width, height;
+        int? frameCount = 1;
 
         switch (fourCc)
         {
@@ -55,11 +56,56 @@ internal sealed class WebPFormatHandler : IFormatHandler
 
                 width = EndianReader.ReadUInt24LittleEndian(buffer, 24) + 1;
                 height = EndianReader.ReadUInt24LittleEndian(buffer, 27) + 1;
+                if ((buffer[20] & 0x02) != 0)
+                {
+                    var riffEnd = 8L + EndianReader.ReadUInt32(buffer, 4, bigEndian: false);
+                    var vp8xSize = EndianReader.ReadUInt32(buffer, 16, bigEndian: false);
+                    frameCount = await CountAnimationFramesAsync(stream, riffEnd, vp8xSize).ConfigureAwait(false);
+                }
                 break;
             default:
                 return new ImageInfo(Format);
         }
 
-        return new ImageInfo(Format, HeaderValues.PositiveOrNull(width), HeaderValues.PositiveOrNull(height), frameCount: 1);
+        return new ImageInfo(Format, HeaderValues.PositiveOrNull(width), HeaderValues.PositiveOrNull(height), frameCount: frameCount);
+    }
+
+    private static async Task<int?> CountAnimationFramesAsync(ProbeReader stream, long riffEnd, uint vp8xSize)
+    {
+        var nextChunk = 20L + vp8xSize + (vp8xSize & 1);
+        if (vp8xSize < 10 || nextChunk > riffEnd || riffEnd > stream.Length)
+            return null;
+
+        var chunk = new byte[8];
+        var hasAnimationHeader = false;
+        var frames = 0;
+        while (nextChunk < riffEnd)
+        {
+            stream.Seek(nextChunk, SeekOrigin.Begin);
+            if (riffEnd - nextChunk < 8 || await stream.ReadFullyAsync(chunk, 0, 8).ConfigureAwait(false) != 8)
+                return null;
+
+            var size = EndianReader.ReadUInt32(chunk, 4, bigEndian: false);
+            nextChunk += 8L + size + (size & 1);
+            if (nextChunk > riffEnd)
+                return null;
+
+            switch (Encoding.ASCII.GetString(chunk, 0, 4))
+            {
+                case "ANIM":
+                    if (hasAnimationHeader || size != 6)
+                        return null;
+                    hasAnimationHeader = true;
+                    break;
+                case "ANMF":
+                    // Each frame has a 16-byte header followed by at least one subchunk.
+                    if (!hasAnimationHeader || size < 16 + 8)
+                        return null;
+                    frames++;
+                    break;
+            }
+        }
+
+        return HeaderValues.PositiveOrNull(frames);
     }
 }

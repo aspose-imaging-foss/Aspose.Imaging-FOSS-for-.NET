@@ -13,6 +13,7 @@ internal static class SampleImages
             .UInt32BE((uint)height)
             .Bytes((byte)bitDepth, 2, 0, 0, 0)
             .Zeros(4)
+            .UInt32BE(0).Ascii("IDAT").Zeros(4)
             .ToArray();
 
     public static byte[] Jpeg(int width, int height, int precision = 8) =>
@@ -120,7 +121,7 @@ internal static class SampleImages
     public static byte[] WebPLossy(int width, int height) =>
         new ByteBuilder()
             .Ascii("RIFF")
-            .UInt32LE(0)
+            .UInt32LE(22)
             .Ascii("WEBP")
             .Ascii("VP8 ")
             .UInt32LE(10)
@@ -135,19 +136,20 @@ internal static class SampleImages
         var packed = (uint)((width - 1) & 0x3FFF) | (uint)(((height - 1) & 0x3FFF) << 14);
         return new ByteBuilder()
             .Ascii("RIFF")
-            .UInt32LE(0)
+            .UInt32LE(18)
             .Ascii("WEBP")
             .Ascii("VP8L")
             .UInt32LE(5)
             .Bytes(0x2F)
             .UInt32LE(packed)
+            .Zeros(1) // RIFF chunks are padded to even sizes.
             .ToArray();
     }
 
     public static byte[] WebPExtended(int width, int height) =>
         new ByteBuilder()
             .Ascii("RIFF")
-            .UInt32LE(0)
+            .UInt32LE(22)
             .Ascii("WEBP")
             .Ascii("VP8X")
             .UInt32LE(10)

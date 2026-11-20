@@ -128,6 +128,7 @@ public class ImageProbeTests
         Assert.Equal(ImageFormat.WebP, info.Format);
         Assert.Equal(400, info.Width);
         Assert.Equal(300, info.Height);
+        Assert.Equal(1, info.FrameCount);
     }
 
     [Fact]
