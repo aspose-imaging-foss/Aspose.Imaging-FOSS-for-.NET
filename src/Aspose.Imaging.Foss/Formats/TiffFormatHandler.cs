@@ -46,7 +46,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
 
         while (ifdOffset != 0 && visitedOffsets.Add(ifdOffset) && frameCount < MaxIfds)
         {
-            stream.Seek(ifdOffset, SeekOrigin.Begin);
+            stream.SeekToOffset(ifdOffset);
             if (await stream.ReadFullyAsync(countBuf, 0, 2).ConfigureAwait(false) < 2)
                 break;
 
@@ -58,7 +58,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
             if (frameCount > 0)
             {
                 frameCount++;
-                stream.Seek(entryCount * 12L, SeekOrigin.Current);
+                stream.Skip(entryCount * 12L);
                 if (await stream.ReadFullyAsync(nextOffsetBuf, 0, 4).ConfigureAwait(false) < 4)
                     break;
 
@@ -128,7 +128,7 @@ internal sealed class TiffFormatHandler : IFormatHandler
         var resumePosition = stream.Position;
 
         var valueBuf = new byte[4];
-        stream.Seek(valueOffset, SeekOrigin.Begin);
+        stream.SeekToOffset(valueOffset);
         var read = await stream.ReadFullyAsync(valueBuf, 0, size).ConfigureAwait(false);
         stream.Seek(resumePosition, SeekOrigin.Begin);
 

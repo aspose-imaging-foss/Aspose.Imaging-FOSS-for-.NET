@@ -84,7 +84,7 @@ internal sealed class DicomFormatHandler : IFormatHandler
             }
             else
             {
-                stream.Seek(length.Value, SeekOrigin.Current);
+                stream.Skip(length.Value);
             }
         }
 
@@ -137,7 +137,7 @@ internal sealed class DicomFormatHandler : IFormatHandler
             }
             else
             {
-                stream.Seek(length.Value, SeekOrigin.Current);
+                stream.Skip(length.Value);
             }
         }
     }

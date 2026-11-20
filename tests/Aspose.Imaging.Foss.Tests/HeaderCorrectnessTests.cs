@@ -187,6 +187,22 @@ public class HeaderCorrectnessTests
     }
 
     [Fact]
+    public void Tiff_BitDepthOffsetPastEnd_PreservesDimensions()
+    {
+        var info = ImageProbe.Probe(SampleImages.TiffWithEntries(new[]
+        {
+            (256, 3, 1u, 800u),
+            (257, 3, 1u, 600u),
+            (258, 3, 3u, uint.MaxValue),
+        }));
+
+        Assert.Equal(ImageFormat.Tiff, info.Format);
+        Assert.Equal(800, info.Width);
+        Assert.Equal(600, info.Height);
+        Assert.Null(info.BitDepth);
+    }
+
+    [Fact]
     public void Tiff_UnsupportedValueType_IsReportedAsUnknown()
     {
         // ASCII (type 2) is not a valid type for ImageWidth.

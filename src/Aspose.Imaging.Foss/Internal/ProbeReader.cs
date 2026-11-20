@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ internal sealed class ProbeReader
     private readonly bool useAsync;
     private readonly CancellationToken cancellationToken;
     private readonly byte[] singleByte = new byte[1];
+    private long? length;
 
     public ProbeReader(Stream stream, bool useAsync, CancellationToken cancellationToken = default)
     {
@@ -19,10 +21,15 @@ internal sealed class ProbeReader
         this.cancellationToken = cancellationToken;
     }
 
-    public long Length => stream.Length;
+    public long Length => length ??= stream.Length;
     public long Position => stream.Position;
 
     public void Seek(long offset, SeekOrigin origin) => stream.Seek(offset, origin);
+
+    // Treat an offset from a truncated header as EOF even on streams that reject seeks past their end.
+    public void SeekToOffset(long offset) => stream.Seek(Math.Min(offset, Length), SeekOrigin.Begin);
+
+    public void Skip(long count) => stream.Seek(Math.Min(count, Length - Position), SeekOrigin.Current);
 
     public async Task<int> ReadFullyAsync(byte[] buffer, int offset, int count)
     {

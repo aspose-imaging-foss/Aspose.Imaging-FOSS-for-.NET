@@ -84,7 +84,7 @@ internal sealed class GifFormatHandler : IFormatHandler
             return;
 
         var tableSize = 3 * (1 << ((packedFields & 0x07) + 1));
-        stream.Seek(tableSize, SeekOrigin.Current);
+        stream.Skip(tableSize);
     }
 
     // Sub-blocks are a size byte followed by that many data bytes, terminated by a zero-size block.
@@ -96,7 +96,7 @@ internal sealed class GifFormatHandler : IFormatHandler
             if (size <= 0)
                 return size == 0;
 
-            stream.Seek(size, SeekOrigin.Current);
+            stream.Skip(size);
         }
     }
 }

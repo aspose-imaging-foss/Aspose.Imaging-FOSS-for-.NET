@@ -116,16 +116,9 @@ public static class ImageProbe
             return new ImageInfo(ImageFormat.Unknown);
 
         reader.Seek(0, SeekOrigin.Begin);
-        try
-        {
-            var info = await handler.ReadInfoAsync(reader).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            return info;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
-        {
-            return new ImageInfo(handler.Format);
-        }
+        var info = await handler.ReadInfoAsync(reader).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return info;
     }
 
     private static int ComputeSignatureBufferSize()

@@ -139,7 +139,7 @@ internal sealed class DjVuFormatHandler : IFormatHandler
             if (nextPos <= dataStart)
                 break;
 
-            stream.Seek(nextPos, SeekOrigin.Begin);
+            stream.SeekToOffset(nextPos);
         }
     }
 }

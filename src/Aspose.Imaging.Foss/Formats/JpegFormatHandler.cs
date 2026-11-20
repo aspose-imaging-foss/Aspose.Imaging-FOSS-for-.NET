@@ -28,6 +28,8 @@ internal sealed class JpegFormatHandler : IFormatHandler
         while (true)
         {
             var marker = await ReadNextMarkerCodeAsync(stream).ConfigureAwait(false);
+            if (marker < 0)
+                break;
 
             if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD9))
                 continue;
@@ -58,32 +60,29 @@ internal sealed class JpegFormatHandler : IFormatHandler
             if (marker == 0xDA)
                 break;
 
-            stream.Seek(segmentLength - 2, SeekOrigin.Current);
+            stream.Skip(segmentLength - 2);
         }
 
         return new ImageInfo(Format);
     }
 
     // SOF markers mark the start of frame data; C4/C8/CC are DHT/JPG-ext/DAC and share the 0xC0-0xCF range without carrying dimensions.
-    private static bool IsStartOfFrameMarker(byte marker) =>
+    private static bool IsStartOfFrameMarker(int marker) =>
         marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
 
-    private static async Task<byte> ReadNextMarkerCodeAsync(ProbeReader stream)
+    private static async Task<int> ReadNextMarkerCodeAsync(ProbeReader stream)
     {
         int b;
         while ((b = await stream.ReadByteAsync().ConfigureAwait(false)) != 0xFF)
         {
             if (b == -1)
-                throw new EndOfStreamException();
+                return -1;
         }
 
         while ((b = await stream.ReadByteAsync().ConfigureAwait(false)) == 0xFF)
         {
         }
 
-        if (b == -1)
-            throw new EndOfStreamException();
-
-        return (byte)b;
+        return b;
     }
 }

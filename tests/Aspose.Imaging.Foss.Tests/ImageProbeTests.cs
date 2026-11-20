@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Aspose.Imaging.Foss.Tests;
@@ -246,15 +247,33 @@ public class ImageProbeTests
         Assert.Equal(16, info.BitDepth);
     }
 
-    [Fact]
-    public void Dicom_TruncatedDataSet_DegradesGracefullyInsteadOfThrowing()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Dicom_TruncatedDataSet_PreservesAvailableMetadata(bool useAsync)
     {
         var full = SampleImages.DicomWithPixelInfo(rows: 512, columns: 256, bitsAllocated: 16);
-        var truncated = full[..^3];
-
-        var info = ImageProbe.Probe(truncated);
+        using var stream = new MemoryStream(full[..^2]); // ends just before BitsAllocated
+        var info = useAsync ? await ImageProbe.ProbeAsync(stream) : ImageProbe.Probe(stream);
 
         Assert.Equal(ImageFormat.Dicom, info.Format);
+        Assert.Equal(256, info.Width);
+        Assert.Equal(512, info.Height);
+        Assert.Null(info.BitDepth);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Dicom_ReadFailureDuringMetadata_PropagatesOriginalException(bool useAsync)
+    {
+        var full = SampleImages.DicomWithPixelInfo(rows: 512, columns: 256, bitsAllocated: 16);
+        using var stream = new FailingReadStream(full[..^2]);
+        var error = useAsync
+            ? await Assert.ThrowsAsync<IOException>(() => ImageProbe.ProbeAsync(stream))
+            : Assert.Throws<IOException>(() => ImageProbe.Probe(stream));
+
+        Assert.Same(stream.Error, error);
     }
 
     [Fact]
@@ -464,5 +483,16 @@ public class ImageProbeTests
         var task = Task.Run(() => ImageProbe.Probe(data));
         Assert.True(task.Wait(timeout), $"Probe did not finish within {timeout.TotalSeconds} s");
         return task.Result;
+    }
+
+    private sealed class FailingReadStream(byte[] data) : MemoryStream(data)
+    {
+        public IOException Error { get; } = new IOException("Metadata read failed.");
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            Position == Length ? throw Error : base.Read(buffer, offset, count);
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken token) =>
+            Position == Length ? Task.FromException<int>(Error) : base.ReadAsync(buffer, offset, count, token);
     }
 }

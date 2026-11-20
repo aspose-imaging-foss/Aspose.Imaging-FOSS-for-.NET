@@ -77,9 +77,8 @@ flowchart TD
   `heic`, `heix`, `hevc`, `hevx`, `heim`, `heis`, `hevm`, `hevs`, or `mif1`/`mif2` without AVIF.
 - Every number in an `ImageInfo` is either positive or `null`: zero, negative, or out-of-range
   header fields are reported as unknown instead of being passed through.
-- `Probe()` never throws on a signature match it can't fully parse — malformed or truncated
-  input comes back as an `ImageInfo` with only `Format` set, never an exception, so a probing
-  pipeline can run unattended over untrusted input.
+- For malformed or truncated headers, `Probe()` returns the detected format and any metadata
+  it could read. Errors raised by the underlying stream propagate to the caller.
 - Both synchronous and async entry points exist for the same operation —
   `ProbeFile()`/`ProbeFileAsync()` and `Probe()`/`ProbeAsync()` — so a probe can run on an ASP.NET
   request thread without blocking it.
@@ -167,9 +166,9 @@ var format = ImageProbe.DetectFormat(bytes);
 var info2 = ImageProbe.Probe(stream);
 ```
 
-`Probe` never throws on malformed or truncated input — if a file matches a format's signature
-but its header can't be fully parsed, you get back an `ImageInfo` with just the `Format` set
-rather than an exception.
+If a file ends partway through a recognized header, unavailable fields in `ImageInfo` are
+`null`. If the stream raises an I/O error during the probe, `Probe` and `ProbeAsync` propagate
+the original exception.
 
 ## Additional Examples
 
